@@ -15,9 +15,9 @@ terms.
 
 The current executable is a research prototype rather than a general-purpose
 simulation package. In particular, experiment selection and parameters are
-set in `src/main.cpp`, and there is not yet a command line interface or a
-general regression suite. A standalone check covers the hydrostatic
-projection and its active outer-shell convention. The checked-in mode-2
+set in `src/main.cpp`; the Statler example additionally has a command-line
+selector. Tests cover hydrostatic projection, the shared Statler evolution
+and output readers. The mode-2
 binary-formation example has also been audited operator by operator; formation
 is conservative to roundoff, but the complete trajectory is currently
 dominated by nonconservative grid realignment.
@@ -78,10 +78,11 @@ an active shell with positive density and pressure; the adjacent conduction
 stencil uses its density, while the fixed outer-`U` row acts as a prescribed
 thermal boundary. The timestep starts at `1e-3` and is adjusted using a target
 maximum relative change in `U` of `1e-3`. The measured change determines the
-next step; the current step is not rejected if it exceeds the target. Binary
-formation is not included in this timestep estimate. Evolution ends when a
-component's central density exceeds `1e12` or the configured step limit is
-reached.
+next step; the legacy controller does not reject a step for exceeding the
+target. Its mode-2 formation is not included in this estimate. The Statler
+example selects a bounded controller with a capture donor limit, described
+below. Evolution stops at the configured density, step or time limit;
+the final step is clipped to the remaining time interval.
 
 ### Conduction and heating linearization
 
@@ -184,7 +185,7 @@ instructions, OpenMP, `-ffast-math`, and `NDEBUG`, so its executable is not
 portable across all CPU architectures and does not retain Eigen's debug
 assertions.
 
-Run the strict-IEEE standalone hydrostatic check with
+Run the strict-IEEE numerical checks and Python tests with
 
 ```bash
 make check
@@ -193,7 +194,8 @@ make check
 The check constructs discrete equilibria at several resolutions and verifies
 that projection changes them only at roundoff level. It also exercises both
 production initializers, identical-grid realignment, the positive outer-shell
-state, and the fixed outer conduction value.
+state, and the fixed outer conduction value. The Statler checks additionally
+cover the capture update, bounded evolution, rejected trials and serialization.
 
 ## Run
 
@@ -203,14 +205,13 @@ Run from the repository root so the relative output paths resolve correctly:
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./main
 ```
 
-Experiment selection is currently made by editing the calls at the bottom of
-`src/main.cpp`; there is no runtime selector. The file defines one-fluid split,
+Legacy experiment selection is made by editing calls at the bottom of
+`src/main.cpp`. The file defines one-fluid split,
 single-fluid tidal, two-component tidal, and binary-formation experiments.
 The checked-in entry point currently selects `binary_formation()`. That source
 function first runs a no-formation baseline and then runs mode-2 formation.
-The formation call currently prints the single and binary enclosed masses on
-every step, so redirect stdout for long runs if the progress log is not
-needed. The non-formation functions provide the baseline examples used to
+For the Statler command-line selector, see the final section below.
+The non-formation functions provide the baseline examples used to
 validate conduction, projection, realignment, and tidal removal.
 
 The current 150-zone mode-2 example reaches the central-density stop at
@@ -325,7 +326,7 @@ convergence checks appropriate to the experiment. Important current limits
 include:
 
 - the log-density interpolation used during realignment is not
-  mass-conservative; in the checked-in mode-2 run, it removes 17.462% of the
+  mass-conservative; in a previously audited mode-2 run, it removed 17.462% of the
   initial mass and dominates the resolved-energy error;
 - the standalone hydrostatic check does not yet cover mass conservation,
   energy conservation, complete-run regression, or grid convergence;
@@ -340,8 +341,12 @@ include:
 - the tidal prescription is a phenomenological explicit density sink rather
   than an external gravitational potential;
 - the profile observer does not guarantee a terminal snapshot;
-- output writes do not currently report short writes or file-open failures;
-  and
-- mode-2 formation prints component masses on every accepted step.
+- output writes do not currently report short writes or file-open failures.
 
 The repository does not currently declare a software license.
+
+## Statler comparison
+
+The Statler comparison now uses the shared `evolve()` driver and saved
+`ThreeFluidParam` settings, with observer-only output. See
+[the setup, numerical scope and reproduction commands](docs/statler-reproduction.md).

@@ -43,7 +43,8 @@ CXXFLAGS += -DNDEBUG
 # its finiteness and fixed-point checks retain standard IEEE semantics.
 check_CXXFLAGS = $(filter-out -ffast-math,$(CXXFLAGS))
 check_NAME := check_hydrostatic_relaxation
-check_OBJS := test/check_hydrostatic_relaxation.o test/three_fluid.o
+solver_check_OBJS := test/three_fluid.o test/evolution.o test/reproduction.o
+check_OBJS := test/check_hydrostatic_relaxation.o $(solver_check_OBJS)
 
 
 # Add linker flags
@@ -58,8 +59,28 @@ all: $(program_NAME)
 $(program_NAME): $(program_OBJS)
 	$(LINK.cc) $(program_OBJS) -o $(program_NAME) $(LDLIBS)
 
-check: $(check_NAME)
+check: $(check_NAME) check_statler
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(check_NAME)
+	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_statler
+	python3 -m unittest discover -s test -p 'test_*.py'
+
+check_statler: test/check_statler.o $(solver_check_OBJS)
+	$(CXX) $(check_CXXFLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+main-strict: test/main.o $(solver_check_OBJS)
+	$(CXX) $(check_CXXFLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+test/main.o: src/main.cpp $(program_HPP_SRCS)
+	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
+
+test/check_statler.o: test/check_statler.cpp $(program_HPP_SRCS)
+	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
+
+test/evolution.o: src/evolution.cpp $(program_HPP_SRCS)
+	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
+
+test/reproduction.o: src/reproduction.cpp $(program_HPP_SRCS)
+	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
 
 $(check_NAME): $(check_OBJS)
 	$(CXX) $(check_CXXFLAGS) $(LDFLAGS) $(check_OBJS) -o $@ $(LDLIBS)
@@ -85,6 +106,7 @@ clean:
 	$(RM) $(program_OBJS)
 	$(RM) $(check_NAME)
 	$(RM) $(check_OBJS)
+	$(RM) check_statler main-strict test/check_statler.o test/main.o
 	$(RM) $(program_CXX_ASMS)
 	$(RM) $(wildcard *~)
 	$(RM) -r html latex

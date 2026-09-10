@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <limits>
 #include <lapacke.h>
+#include <stdexcept>
 
 
 using namespace Eigen;
@@ -27,6 +28,8 @@ ThreeFluidSim::ThreeFluidSim() {}
 void ThreeFluidSim::initSolver(const int N) {
   this->N = N;
   for(int f = 0; f < NF; ++f){
+    trialU[f].resize(N);
+    trialP[f].resize(N);
     R[f].resize(N);
     Rho[f].resize(N);
     U[f].resize(N);
@@ -36,6 +39,7 @@ void ThreeFluidSim::initSolver(const int N) {
     logRho[f].resize(N);
   }
   
+  formationSource = VectorXd::Zero(N);
   logR = VectorXd::Zero(N);
 
   // Init conduction solver
@@ -181,6 +185,9 @@ void ThreeFluidSim::printParams() const {
 
 
 void ThreeFluidSim::initPlummerYiming(const double rho0, const double xi1, const double xi2, const double zeta1, const double zeta2){
+  options.initial_profile = 1;
+  options.initial_profile_values = {rho0, xi1, xi2, zeta1, zeta2};
+
   constexpr double r0 = 1.0;
   //constexpr double rho0 = 1.0;
   
@@ -271,6 +278,9 @@ void ThreeFluidSim::initPlummerYiming(const double rho0, const double xi1, const
 }
   
 void ThreeFluidSim::initPlummer(const double rhos_central, const double xi1, const double xi2, const double zeta1, const double zeta2) {
+  options.initial_profile = 0;
+  options.initial_profile_values = {rhos_central, xi1, xi2, zeta1, zeta2};
+
   // Basic units
   // constexpr double r0 = 1;
   // constexpr double rho0 = 1;
@@ -353,7 +363,7 @@ void ThreeFluidSim::solveConductionLAPACKE() {
       cout << "(solveConductionLAPACKE) Incorrect banded matrix index!" << endl;
       cout << "(solveConductionLAPACKE) Input row, col, val = "
 	   << row << ", " << col << ", " << val << endl;
-      exit(0);
+      throw std::runtime_error("invalid conduction matrix index");
     }
   };
 
@@ -467,7 +477,7 @@ void ThreeFluidSim::solveConductionLAPACKE() {
   if (info != 0) {
     std::cerr << "Conduction failed!" << info << std::endl;
     std::cerr << "LAPACKE_dgbsv failed with error code " << info << std::endl;
-    exit(0);
+    throw std::runtime_error("conduction solve failed");
   }
 
   // ---------- Unpack solution back to U[f][i] ----------
@@ -562,7 +572,7 @@ void ThreeFluidSim::solveRelaxationLAPACKE(const int f) {
     cout << "hydroD = " << hydroD.transpose() << endl;
     cout << "hydroDU = " << hydroDU.transpose() << endl;
     cout << "hydroB = " << hydroB.transpose() << endl;
-    exit(0);
+    throw std::runtime_error("relaxation solve failed");
   }
 
   bool R_ordered = true;
@@ -578,7 +588,7 @@ void ThreeFluidSim::solveRelaxationLAPACKE(const int f) {
 
   if(!R_ordered){
     cout << "Relaxation: unordered R[f] after relaxation!" << endl;
-    exit(0);
+    throw std::runtime_error("relaxation would cross shells");
   }
 
   // Version that exactly preserves s_i and m_i
@@ -682,6 +692,10 @@ void ThreeFluidSim::realign() {
 // 4. BINARY FORMATION
 // ----------------------------------------------------------------
 void ThreeFluidSim::applyBinaryFormation() {
+  if (binary_formation == BINARY_FORMATION_POWER_LAW) {
+    applyPowerLawFormation();
+    return;
+  }
   constexpr double rho0 = 1;
   constexpr double r0 = 1;
   constexpr double M0 = 4 * std::numbers::pi * pow(r0, 3) * rho0;
@@ -798,8 +812,8 @@ void ThreeFluidSim::applyTidalCutoff() {
 }
 
 
-void ThreeFluidSim::saveParams(const std::string &dir) const {
-  ThreeFluidParam param;
+ThreeFluidParam ThreeFluidSim::parameters() const {
+  ThreeFluidParam param = options;
   param.N = N;
   param.ms = ms;
   param.mb = mb;
@@ -817,27 +831,9 @@ void ThreeFluidSim::saveParams(const std::string &dir) const {
   param.maxSteps = maxSteps;
   param.thres = thres;
 
-  save_param_for_Mathematica(param, dir);
+  return param;
 }
 
-bool ThreeFluidSim::stopCondition() const {
-  bool result = false;
-  const double curMaxDensity = max({Rho[FS][0], Rho[FB][0], Rho[FD][0]});
-  result |= curMaxDensity > StopDensity;
-  result |= step >= maxSteps;
-  result |= totalTime > maxTime;
-  return result;
-}
-
-void ThreeFluidSim::sanityCheck() const {
-  if(U[FS].array().isNaN().any()
-     || U[FB].array().isNaN().any()
-     || U[FD].array().isNaN().any()){
-    cout << "NaNs in U[]!" << endl;
-    exit(0);
-  }
-  // cout << "R[FS] = " << R[FS].transpose() << endl;
-  // cout << "Rho[FS] = " << Rho[FS].transpose() << endl;
-  // cout << "U[FS] = " << U[FS].transpose() << endl;
-
+void ThreeFluidSim::saveParams(const std::string &dir) const {
+  save_param_for_Mathematica(parameters(), dir);
 }

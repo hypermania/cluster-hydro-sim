@@ -1,5 +1,24 @@
 #include "three_fluid.hpp"
 #include "observer.hpp"
+#include "reproduction.hpp"
+#include "statler_observer.hpp"
+#include <filesystem>
+
+void statler_reproduction(bool direct, const std::string& directory,
+                          long long max_steps, double final_time_trh) {
+  if(directory.empty()) throw std::invalid_argument("output directory is empty");
+  ThreeFluidParam settings=statlerParameters(direct);
+  settings.maxSteps=max_steps;
+  settings.final_time_trh=final_time_trh;
+  ThreeFluidSim sim;
+  initializeCaptureCluster(sim,settings);
+  std::filesystem::create_directories(directory);
+  const std::string output=directory.back()=='/'?directory:directory+"/";
+  sim.saveParams(output);
+  StatlerObserver observer(sim.parameters());
+  sim.evolve(observer);
+  observer.save(output);
+}
 
 void one_fluid_split_in_two(void){
   const std::vector times_to_save({0.0, 5.5, 5.565, 5.56517});
@@ -255,7 +274,20 @@ void binary_formation(void){
 }
 
 
-int main() {
+int main(int argc, char** argv) {
+  if(argc>1) {
+    try {
+      if(argc<4 || argc>6 || std::string(argv[1])!="statler" ||
+         (std::string(argv[2])!="direct" && std::string(argv[2])!="control"))
+        throw std::invalid_argument("usage: main statler direct|control output_directory [max_steps] [final_time_trh]");
+      statler_reproduction(std::string(argv[2])=="direct",argv[3],
+                            argc>4?std::stoll(argv[4]):2000000,
+                            argc>5?std::stod(argv[5]):10000.0);
+      return 0;
+    } catch(const std::exception& e) {
+      std::cerr<<e.what()<<'\n';return 1;
+    }
+  }
   // one_fluid_split_in_two();
   // tidal_bench_single();
   // tidal_bench_AB();

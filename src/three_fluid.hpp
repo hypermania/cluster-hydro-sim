@@ -25,6 +25,7 @@ constexpr int NF = 3;
 constexpr long long int BINARY_FORMATION_OFF = 0;
 constexpr long long int BINARY_FORMATION_MODE_1 = 1;
 constexpr long long int BINARY_FORMATION_MODE_2 = 2;
+constexpr long long int BINARY_FORMATION_POWER_LAW = 3;
 
 constexpr long long int TIDAL_CUTOFF_OFF = 0;
 constexpr long long int TIDAL_CUTOFF_ON = 1;
@@ -51,6 +52,44 @@ struct ThreeFluidParam {
   double maxTime;
   long long int maxSteps;
   double thres;
+  // Additional configuration. Physical scales are metadata, not internal state.
+  long long int schema_version = 2;
+  long long int initial_profile = 0; // 0 Plummer, 1 Yiming
+  std::array<double, 5> initial_profile_values = {1, 1e-10, 1e-10, 1, 1};
+  double initial_timestep = 1e-3;
+  long long int timestep_controller = 0; // 0 legacy U, 1 bounded U+density
+  double max_timestep = 1.0;
+  double donor_fraction_limit = 0.005;
+  double retry_safety = 0.8;
+  long long int max_retries = 100;
+  double density_change_tolerance = 0.025;
+  double timestep_growth_min = 0.5;
+  double timestep_growth_max = 1.5;
+  double error_control_floor = 1e-12;
+  long long int relaxation_passes = 2;
+  long long int central_density_measure = 0; // 0 max species, 1 singles+binaries
+  double capture_coefficient = 0; // number source: A rho_s^2 U_s^-exponent
+  double capture_energy_exponent = 0.6;
+  double captured_specific_energy_fraction = 0.5;
+  double reference_coulomb_log = 0;
+  double stellar_number = 0;
+  double stellar_mass_msun = 0;
+  double stellar_radius_rsun = 0;
+  double length_unit_pc = 0;
+  double reference_trh_myr = 0;
+  double gravitational_constant_pc3_msun_myr2 = 0;
+  double solar_radius_pc = 0;
+  double time_unit_myr = 0;
+  double time_unit_over_trh = 0;
+  double final_time_trh = 0;
+  long long int direct_heating = 1;
+  // Observer settings: explicit finite schedule; unused entries are zero.
+  long long int statler_observer = 0;
+  long long int history_stride = 1;
+  long long int snapshot_count = 0;
+  std::array<double, 16> snapshot_times_trh{};
+  long long int save_peak_snapshot = 1;
+  long long int output_format = 1; // little-endian binary float64/int64
 };
 
 
@@ -84,6 +123,13 @@ public:
   long long int maxSteps = 1e7;
   double thres = 1e-3;
   
+  // New settings live here; parameters() exports these plus legacy members.
+  ThreeFluidParam options{};
+  double cumulative_formed_binaries = 0.0;
+  long long int rejected_steps = 0;
+  std::array<Eigen::VectorXd, NF> trialU, trialP;
+  Eigen::VectorXd formationSource;
+
   // Internal state
   double totalTime = 0.0;
   long long int step = 0;
@@ -130,6 +176,7 @@ public:
   void printParams() const;
   void printCoeffs() const;
   void saveParams(const std::string &) const;
+  ThreeFluidParam parameters() const;
 
 
   // Fragments of main evolution step
@@ -139,62 +186,28 @@ public:
   void realign();
   void applyBinaryFormation();
   void applyTidalCutoff();
+  double centralDensity() const;
+  double captureNumberRate(int zone) const;
+  double prepareFormationSource();
+  void applyPowerLawFormation();
+  void projectHydrostatic();
+  void validateEvolution() const;
+  void advanceAcceptedStep();
+  double conductionChange() const;
+  void selectNextTimestep(double used_dt, double energy_change, double old_density);
   bool stopCondition() const;
   void sanityCheck() const;
 
   // Main evolution step
   template<typename Observer>
   void evolve(Observer &observer) {
-    using namespace std;
-    using namespace Eigen;
-    std::array<Eigen::VectorXd, NF> lastU(U);
-
+    validateEvolution();
     step = 0;
-    while(true) {
-      // std::cout << std::setprecision(9) << std::left;
-      // cout << "step, t, Deltat = " << step << ", " << totalTime << ", " << Deltat << endl;
-      observer(*this);
-    
-      if(stopCondition()) break;
-      
-      // Start of timestep
-      lastU = U;
-
-      solveConductionLAPACKE();
-
-      // Adaptive timestep, should be calculated due to change from conduction step only
-      double maxChange = 0.0;
-      for(int f = 0; f < NF; ++f) {
-	maxChange = max(maxChange, ((U[f].array() - lastU[f].array()).abs() / lastU[f].array()).maxCoeff());
-      }
-
-      if(tidal_cutoff != TIDAL_CUTOFF_OFF) { applyTidalCutoff(); }
-      // Binary formation changes Rho and Menc, but preserves U, updates P = (2/3) * Rho * U
-      if(binary_formation != BINARY_FORMATION_OFF) { applyBinaryFormation(); }
-
-      
-      for(int f = 0; f < NF; ++f) {
-	solveRelaxationLAPACKE(f);
-	solveRelaxationLAPACKE(f);
-	// solveRelaxationLAPACKE(f);
-	// solveRelaxationLAPACKE(f);
-	// solveRelaxationLAPACKE(f);
-      }
-      
-      realign();
-
-      // Sanity checks
-      sanityCheck();
-      
-      totalTime += Deltat;      
-      Deltat = Deltat * thres / maxChange;
-      ++step;
+    observer(static_cast<const ThreeFluidSim&>(*this));
+    while (!stopCondition()) {
+      advanceAcceptedStep();
+      observer(static_cast<const ThreeFluidSim&>(*this));
     }
-    
-    cout << "Simulation finished at t = " << totalTime << " (steps = " << step << ")" << endl;
   }
-
-  
 };
-
 

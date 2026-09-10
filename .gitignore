@@ -1,5 +1,7 @@
 /main
 /check_hydrostatic_relaxation
+/check_statler
+/main-strict
 /output/
 *.o
 *.s
