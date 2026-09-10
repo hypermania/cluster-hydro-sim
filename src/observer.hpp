@@ -2,21 +2,24 @@
 
 #include "three_fluid.hpp"
 
-struct CentralValueObserver {
+struct KeyValueObserver {
   std::vector<double> t_list;
   std::array<std::vector<double>, NF> central_Rho;
   std::array<std::vector<double>, NF> central_U;
+  std::array<std::vector<double>, NF> total_M;
 
-  CentralValueObserver() {}
+  KeyValueObserver() {}
   
   void operator()(const ThreeFluidSim &sim) {
     const auto &Rho = sim.Rho;
     const auto &U = sim.U;
+    const auto &Menc = sim.Menc;
     const double t = sim.totalTime;
     t_list.push_back(t);
     for(int f = 0; f < NF; ++f){
       central_Rho[f].push_back(Rho[f][0]);
       central_U[f].push_back(U[f][0]);
+      total_M[f].push_back(Menc[f][sim.N-1]);
     }
   }
 
@@ -25,9 +28,14 @@ struct CentralValueObserver {
     write_to_file(central_Rho[FS], dir + "central_Rho_s.dat");
     write_to_file(central_Rho[FB], dir + "central_Rho_b.dat");
     write_to_file(central_Rho[FD], dir + "central_Rho_d.dat");
+    
     write_to_file(central_U[FS], dir + "central_U_s.dat");
     write_to_file(central_U[FB], dir + "central_U_b.dat");
     write_to_file(central_U[FD], dir + "central_U_d.dat");
+    
+    write_to_file(total_M[FS], dir + "total_M_s.dat");
+    write_to_file(total_M[FB], dir + "total_M_b.dat");
+    write_to_file(total_M[FD], dir + "total_M_d.dat");
   }
 };
 

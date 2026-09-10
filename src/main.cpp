@@ -67,7 +67,7 @@ void tidal_bench_single(void){
     
     ApproximateTimeObserver observer1(times_to_save);
     LagrangianRadiiObserver observer2({0.01, 0.05, 0.1, 0.2, 0.5, 0.7});
-    CentralValueObserver observer3;
+    KeyValueObserver observer3;
     ObserverPack observer(observer1, observer2, observer3);
     
     std::string dir = "output/one_fluid_without_tidal/";
@@ -178,10 +178,11 @@ void binary_formation(void){
     //   }
     // }
 
-    
     ApproximateTimeObserver observer1({0.0, 5.0, 5.8, 5.806, 5.80664});
     LagrangianRadiiObserver observer2({0.01, 0.05, 0.1, 0.2, 0.5, 0.7});
-    ObserverPack observer(observer1, observer2);
+    KeyValueObserver observer3;
+    ObserverPack observer(observer1, observer2, observer3);
+
     
     std::string dir = "output/one_fluid_baseline/";
     prepare_directory_for_output(dir);
@@ -210,9 +211,9 @@ void binary_formation(void){
 
     ApproximateTimeObserver observer1({0.0, 3.0, 3.8, 3.82, 3.823});
     LagrangianRadiiObserver observer2({0.01, 0.05, 0.1, 0.2, 0.5, 0.7});
-    // CentralValueObserver observer3;
-    // ObserverPack observer(observer1, observer2, observer3);    
-    ObserverPack observer(observer1, observer2);
+    KeyValueObserver observer3;
+    ObserverPack observer(observer1, observer2, observer3);    
+
     
     std::string dir = "output/one_fluid_binary_formation_without_binary_heating/";
     prepare_directory_for_output(dir);
@@ -238,9 +239,8 @@ void binary_formation(void){
 
     ApproximateTimeObserver observer1({0.0, 1.0, 10.0, 100.0, 692.0});
     LagrangianRadiiObserver observer2({0.01, 0.05, 0.1, 0.2, 0.5, 0.7});
-    // CentralValueObserver observer3;
-    // ObserverPack observer(observer1, observer2, observer3);    
-    ObserverPack observer(observer1, observer2);
+    KeyValueObserver observer3;
+    ObserverPack observer(observer1, observer2, observer3);    
     
     std::string dir = "output/one_fluid_binary_formation/";
     prepare_directory_for_output(dir);
