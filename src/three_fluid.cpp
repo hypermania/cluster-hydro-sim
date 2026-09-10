@@ -813,7 +813,31 @@ void ThreeFluidSim::saveParams(const std::string &dir) const {
   param.tidal_radius = tidal_radius;
   param.Deltat = Deltat;
   param.StopDensity = StopDensity;
+  param.maxTime = maxTime;
+  param.maxSteps = maxSteps;
   param.thres = thres;
 
   save_param_for_Mathematica(param, dir);
+}
+
+bool ThreeFluidSim::stopCondition() const {
+  bool result = false;
+  const double curMaxDensity = max({Rho[FS][0], Rho[FB][0], Rho[FD][0]});
+  result |= curMaxDensity > StopDensity;
+  result |= step >= maxSteps;
+  result |= totalTime > maxTime;
+  return result;
+}
+
+void ThreeFluidSim::sanityCheck() const {
+  if(U[FS].array().isNaN().any()
+     || U[FB].array().isNaN().any()
+     || U[FD].array().isNaN().any()){
+    cout << "NaNs in U[]!" << endl;
+    exit(0);
+  }
+  // cout << "R[FS] = " << R[FS].transpose() << endl;
+  // cout << "Rho[FS] = " << Rho[FS].transpose() << endl;
+  // cout << "U[FS] = " << U[FS].transpose() << endl;
+
 }

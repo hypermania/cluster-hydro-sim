@@ -48,6 +48,8 @@ struct ThreeFluidParam {
   // Numerical control parameters
   double Deltat;
   double StopDensity;
+  double maxTime;
+  long long int maxSteps;
   double thres;
 };
 
@@ -78,10 +80,13 @@ public:
   // Numerical control parameters
   double Deltat = 1e-3;
   double StopDensity = 1e12;
+  double maxTime = 1e4;
+  long long int maxSteps = 1e7;
   double thres = 1e-3;
   
   // Internal state
   double totalTime = 0.0;
+  long long int step = 0;
   std::array<Eigen::VectorXd, NF> Rho, U, Menc, P, R;
 
   // Temporary variables
@@ -121,59 +126,36 @@ public:
   // Assign initial conditions
   void initPlummer(const double rhos_central, const double xi1, const double xi2, const double zeta1, const double zeta2);
 
+  // IO
   void printParams() const;
   void printCoeffs() const;
-
   void saveParams(const std::string &) const;
 
 
-  
+  // Fragments of main evolution step
   void updateEnclosedMass();
-
-  // ----------------------------------------------------------------
-  // 1. CONDUCTION + INTERACTION
-  // ----------------------------------------------------------------
   void solveConductionLAPACKE();
-
-  // ----------------------------------------------------------------
-  // 2. RELAXATION (per fluid, hydrostatic + constant entropy)
-  //    Exact copy of Mathematica SolveRelaxation + notes (26)-(28)
-  // ----------------------------------------------------------------
   void solveRelaxationLAPACKE(const int f);
-  
-  // ----------------------------------------------------------------
-  // 3. REALIGNMENT (common grid + interpolation)
-  // ----------------------------------------------------------------
   void realign();
-
-  // ----------------------------------------------------------------
-  // 4. BINARY FORMATION (simple total-mass transfer, notes 1.4)
-  // ----------------------------------------------------------------
   void applyBinaryFormation();
-
   void applyTidalCutoff();
+  bool stopCondition() const;
+  void sanityCheck() const;
 
-  // ----------------------------------------------------------------
-  // 5. MAIN EVOLUTION (with adaptive time steps)
-  // ----------------------------------------------------------------
-  // void evolve(const int maxSteps);
-
+  // Main evolution step
   template<typename Observer>
-  void evolve(const int maxSteps, Observer &observer) {
+  void evolve(Observer &observer) {
     using namespace std;
     using namespace Eigen;
-    int step = 0;
     std::array<Eigen::VectorXd, NF> lastU(U);
-  
+
+    step = 0;
     while(true) {
       // std::cout << std::setprecision(9) << std::left;
       // cout << "step, t, Deltat = " << step << ", " << totalTime << ", " << Deltat << endl;
       observer(*this);
     
-      double curMaxDensity = max({Rho[FS][0], Rho[FB][0], Rho[FD][0]});
-      if(curMaxDensity > StopDensity) break;
-      if(step >= maxSteps) break;
-      if(Deltat > 1) break;
+      if(stopCondition()) break;
       
       // Start of timestep
       lastU = U;
@@ -202,15 +184,7 @@ public:
       realign();
 
       // Sanity checks
-      if(U[FS].array().isNaN().any()
-	 || U[FB].array().isNaN().any()
-	 || U[FD].array().isNaN().any()){
-	cout << "NaNs in U[]!" << endl;
-	exit(0);
-      }
-      // cout << "R[FS] = " << R[FS].transpose() << endl;
-      // cout << "Rho[FS] = " << Rho[FS].transpose() << endl;
-      // cout << "U[FS] = " << U[FS].transpose() << endl;
+      sanityCheck();
       
       totalTime += Deltat;      
       Deltat = Deltat * thres / maxChange;

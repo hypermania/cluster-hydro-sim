@@ -23,7 +23,7 @@ void one_fluid_split_in_two(void){
     std::string dir = "output/one_fluid_Yiming/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(50000000, observer);
+    sim.evolve(observer);
     observer.save(dir);
   }
 
@@ -45,7 +45,7 @@ void one_fluid_split_in_two(void){
     std::string dir = "output/one_fluid_split_in_two_Yiming/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(50000000, observer);
+    sim.evolve(observer);
     observer.save(dir);
   }
 
@@ -73,7 +73,7 @@ void tidal_bench_single(void){
     std::string dir = "output/one_fluid_without_tidal/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(50000000, observer);
+    sim.evolve(observer);
     observer.save(dir);
   }
 
@@ -99,7 +99,7 @@ void tidal_bench_single(void){
     std::string dir = "output/one_fluid_with_tidal/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(100000, observer);
+    sim.evolve(observer);
     observer.save(dir);
   }
   
@@ -127,7 +127,7 @@ void tidal_bench_AB(void){
     std::string dir = "output/baseline_AB/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(50000000, observer);
+    sim.evolve(observer);
     observer.save(dir);
   }
 
@@ -152,7 +152,7 @@ void tidal_bench_AB(void){
     std::string dir = "output/with_tidal_AB/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(50000000, observer);
+    sim.evolve(observer);
     observer.save(dir);
   }
 
@@ -187,7 +187,7 @@ void binary_formation(void){
     std::string dir = "output/one_fluid_baseline/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(50000000, observer);
+    sim.evolve(observer);
     observer.save(dir);
   }
   
@@ -218,7 +218,7 @@ void binary_formation(void){
     std::string dir = "output/one_fluid_binary_formation_without_binary_heating/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(1000000, observer);
+    sim.evolve(observer);
     observer.save(dir);
 
     std::cout << "Menc[FS], Menc[FB] = "
@@ -245,7 +245,7 @@ void binary_formation(void){
     std::string dir = "output/one_fluid_binary_formation/";
     prepare_directory_for_output(dir);
     sim.saveParams(dir);
-    sim.evolve(1000000, observer);
+    sim.evolve(observer);
     observer.save(dir);
 
     std::cout << "Menc[FS], Menc[FB] = "
