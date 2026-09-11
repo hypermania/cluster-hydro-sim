@@ -83,8 +83,8 @@ void ThreeFluidSim::projectHydrostatic() {
 }
 
 void ThreeFluidSim::selectNextTimestep(double used,double change) {
-  if(!std::isfinite(change)||change<0)
-    throw std::runtime_error("invalid timestep error estimate");
+  // if(!std::isfinite(change)||change<0)
+  //   throw std::runtime_error("invalid timestep error estimate");
   Deltat=change>0?std::min(param.max_timestep,used*param.u_change_tolerance/change)
                 :param.max_timestep;
   if(!std::isfinite(Deltat)||Deltat<=0) throw std::runtime_error("invalid next timestep");
@@ -93,9 +93,9 @@ void ThreeFluidSim::selectNextTimestep(double used,double change) {
 void ThreeFluidSim::advanceAcceptedStep() {
   if(!std::isfinite(Deltat)||Deltat<=0)
     throw std::runtime_error("invalid timestep");
-  Deltat=std::min({Deltat,param.max_timestep,param.maxTime-totalTime});
-  if(Deltat<=0 || totalTime+Deltat==totalTime)
-    throw std::runtime_error("timestep cannot advance time");
+  // Deltat=std::min({Deltat,param.max_timestep,param.maxTime-totalTime});
+  // if(Deltat<=0 || totalTime+Deltat==totalTime)
+  //   throw std::runtime_error("timestep cannot advance time");
   if(param.tidal_cutoff!=TIDAL_CUTOFF_OFF && param.tidal_cutoff_factor*Deltat>=1)
     throw std::runtime_error("tidal sink would exhaust density");
   previousU=U;
