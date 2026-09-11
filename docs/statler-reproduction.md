@@ -117,8 +117,9 @@ formation, two corrections per fluid, and realignment.
 The controller uses only the maximum fractional U change during conduction:
 `dt_next=min(max_timestep,dt_used*u_change_tolerance/change)`.
 For exactly zero change, it uses `max_timestep`. It has no density term,
-growth clamp, error floor or retry mechanism. The next step is clipped to
-the remaining integration interval. Central density is used only for stopping.
+growth clamp, error floor or retry mechanism. The final step is taken in full;
+evolution stops once the time reaches or exceeds `maxTime`. Central density
+is used only for stopping.
 Only pre-conduction U is retained to measure the change; pressure backups,
 source buffers and rejected-step counters have been removed.
 
@@ -127,17 +128,17 @@ An invalid transfer or exhausted donor throws immediately. Earlier zones
 may already have changed; a failed simulation must terminate, not save or
 resume that partial state. There is no rollback and no 0.5% donor limit.
 
-Intentional shared-driver corrections: stop at time-limit equality, clip
-the last step, bound a zero-error timestep proposal, and throw on numerical
+Intentional shared-driver corrections: stop at time-limit equality,
+bound a zero-error timestep proposal, and throw on numerical
 failure instead of `exit(0)`. The original positive-error U-only update is
-restored, with the finite maximum step and endpoint guards retained. Existing
+restored, with a finite maximum next-step proposal. Existing
 interpolation-based realignment and the outer fixed-temperature conduction
 row are unchanged, including their conservation limitations.
 
 `sim.param.runtime_validation=0` disables automatic full-state finiteness,
 positivity and shell-order scans; it defaults to 1. There is one automatic
 scan per step, after realignment, plus the initial-state check. Cheap configuration,
-solver-error, donor-depletion and time-advance guards remain mandatory.
+solver-error, donor-depletion and positive finite timestep checks remain mandatory.
 `sanityCheck()` can always be invoked explicitly. Use `main-strict` when
 relying on IEEE finiteness checks; fast-math can invalidate those checks.
 
@@ -172,10 +173,21 @@ the fluid closure reproduces every plotted physical quantity.
 the eight existing examples, and Python tests.
 The checks cover local formation mass/energy balance, unchanged first-step
 values and new 100-step U-only checkpoints, observer lengths and parameter
-readback, time-limit equality and clipping, immediate formation failure
+readback, time-limit equality and allowed final-step overshoot, immediate formation failure
 without acceptance or output, zero-error U-only control, observer composition,
 and runtime validation on/off. A finite 1% donor transfer verifies that the
 former 0.5% restriction is gone.
+
+The 100-step trajectory comparisons use a relative tolerance of `1e-9`,
+separate from the `2e-10` local and first-step checks. An Intel i5-11400 run
+reported a `2.0323e-10` relative time difference, just beyond the former
+threshold; accumulated adaptive-step rounding can depend on the build and
+platform. Full-precision failure diagnostics remain enabled.
+
+Both public Python plotters use stored actual times, including overshooting
+steps. The atlas retains the paper's fixed time-axis limits, so a point beyond
+the displayed range can be hidden. Scheduled snapshots are accepted-step
+samples, not interpolations to the requested times.
 
 Historical validation of commit `683fdfb`, before the parameter simplification:
 the migrated 500-zone direct run reaches `1e4 trh` in 12,141 accepted steps;

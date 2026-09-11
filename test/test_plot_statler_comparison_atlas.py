@@ -54,6 +54,23 @@ def main() -> int:
 
 
 class StatlerPlotTest(unittest.TestCase):
+    def test_overshooting_time_is_not_clipped_to_paper_viewport(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            write_synthetic_run(directory)
+            np.array([0.0, 1.0, 10001.0], dtype="<f8").tofile(
+                directory / MODULE.HISTORY_FILES["time"])
+            np.array([0.0, 10001.0], dtype="<f8").tofile(
+                directory / "snapshot_time_trh.dat")
+            run = MODULE.load_run(directory)
+            figure, axis = MODULE.plt.subplots()
+            try:
+                MODULE.plot_binary_number(axis, run)
+                self.assertEqual(axis.lines[0].get_xdata()[-1], 10001.0)
+                self.assertEqual(axis.get_xlim()[1], 10000.0)
+            finally:
+                MODULE.plt.close(figure)
+
     def test_plotting_helpers(self):
         self.assertEqual(main(), 0)
 
