@@ -25,6 +25,7 @@ constexpr int NF = 3;
 constexpr long long int BINARY_FORMATION_OFF = 0;
 constexpr long long int BINARY_FORMATION_MODE_1 = 1;
 constexpr long long int BINARY_FORMATION_MODE_2 = 2;
+constexpr long long int BINARY_FORMATION_POWER_LAW = 3;
 
 constexpr long long int TIDAL_CUTOFF_OFF = 0;
 constexpr long long int TIDAL_CUTOFF_ON = 1;
@@ -32,25 +33,28 @@ constexpr long long int TIDAL_CUTOFF_ON = 1;
 
 struct ThreeFluidParam {
   // Evolution parameters
-  long long int N;
-  double ms;
-  double mb;
-  double md;
-  std::array<double, NF> c2; // Conduction
-  std::array<double, NF*NF> c1; // Dynamical heating
-  std::array<double, NF*NF> c4;  // Binary heating
+  long long int N = 200;
+  double ms = 1.0 / 1e6;
+  double mb = 2.0 / 1e6;
+  double md = 1e-10 / 1e6;
+  std::array<double, NF> c2{}; // Conduction
+  std::array<double, NF*NF> c1{}; // Dynamical heating, row-major
+  std::array<double, NF*NF> c4{}; // Binary heating, row-major
   
-  long long int binary_formation;
-  long long int tidal_cutoff;
-  double tidal_cutoff_factor;
-  double tidal_radius;
+  long long int binary_formation = BINARY_FORMATION_OFF;
+  long long int tidal_cutoff = TIDAL_CUTOFF_OFF;
+  double tidal_cutoff_factor = 50;
+  double tidal_radius = 10;
 
   // Numerical control parameters
-  double Deltat;
-  double StopDensity;
-  double maxTime;
-  long long int maxSteps;
-  double thres;
+  double Deltat = 1e-3; // Initial timestep; adaptive timestep is simulation state.
+  double StopDensity = 1e12;
+  double maxTime = 1e4;
+  long long int maxSteps = 10000000;
+  double u_change_tolerance = 1e-3;
+  double max_timestep = 1.0;
+  double capture_coefficient = 0; // PT number source: A rho_s^2 U_s^-0.6
+  long long int runtime_validation = 1; // Optional full-state scans.
 };
 
 
@@ -62,28 +66,12 @@ struct ThreeFluidParam {
 // ===================================================================
 class ThreeFluidSim {
 public:
-  // Evolution parameters
-  long long int N = 200;
-  double ms = 1.0 / 1e6;
-  double mb = 2.0 / 1e6;
-  double md = 1e-10 / 1e6;
-  double c2[NF]; // Conduction
-  double c1[NF][NF]; // Dynamical heating
-  double c4[NF][NF]; // Binary heating
-
-  long long int binary_formation = BINARY_FORMATION_OFF;
-  long long int tidal_cutoff = TIDAL_CUTOFF_OFF;
-  double tidal_cutoff_factor = 50;
-  double tidal_radius = 1e1;
-
-
-  // Numerical control parameters
+  ThreeFluidParam param{};
+  // Adaptive timestep is evolving state, not a second configuration copy.
   double Deltat = 1e-3;
-  double StopDensity = 1e12;
-  double maxTime = 1e4;
-  long long int maxSteps = 1e7;
-  double thres = 1e-3;
-  
+  double cumulative_formed_binaries = 0.0;
+  std::array<Eigen::VectorXd, NF> previousU; // Pre-conduction values for timestep control.
+
   // Internal state
   double totalTime = 0.0;
   long long int step = 0;
@@ -118,10 +106,10 @@ public:
   // Compute and assign coeffs c1[NF][NF], c2[NF] and c4[NF][NF]
   void initCoeffs(const double Mtot_over_ms, const double mb_over_ms, const double md_over_ms);
 
-  // Assign coeffs according to Yiming's paper
+  // Deprecated compatibility initializer; initCoeffs is canonical.
   void initCoeffsYiming();
 
-  // Assign initial conditions using algorithm replicated from Yiming's paper
+  // Deprecated compatibility initializer; initPlummer is canonical.
   void initPlummerYiming(const double rho0, const double xi1, const double xi2, const double zeta1, const double zeta2);
   // Assign initial conditions
   void initPlummer(const double rhos_central, const double xi1, const double xi2, const double zeta1, const double zeta2);
@@ -139,62 +127,27 @@ public:
   void realign();
   void applyBinaryFormation();
   void applyTidalCutoff();
+  double centralDensity() const;
+  double captureNumberRate(int zone) const;
+  void applyPowerLawFormation();
+  void projectHydrostatic();
+  void validateEvolution() const;
+  void advanceAcceptedStep();
+  double conductionChange() const;
+  void selectNextTimestep(double used_dt, double energy_change);
   bool stopCondition() const;
   void sanityCheck() const;
 
   // Main evolution step
   template<typename Observer>
   void evolve(Observer &observer) {
-    using namespace std;
-    using namespace Eigen;
-    std::array<Eigen::VectorXd, NF> lastU(U);
-
+    if(totalTime==0) Deltat=param.Deltat;
+    validateEvolution();
     step = 0;
-    while(true) {
-      // std::cout << std::setprecision(9) << std::left;
-      // cout << "step, t, Deltat = " << step << ", " << totalTime << ", " << Deltat << endl;
-      observer(*this);
-    
-      if(stopCondition()) break;
-      
-      // Start of timestep
-      lastU = U;
-
-      solveConductionLAPACKE();
-
-      // Adaptive timestep, should be calculated due to change from conduction step only
-      double maxChange = 0.0;
-      for(int f = 0; f < NF; ++f) {
-	maxChange = max(maxChange, ((U[f].array() - lastU[f].array()).abs() / lastU[f].array()).maxCoeff());
-      }
-
-      if(tidal_cutoff != TIDAL_CUTOFF_OFF) { applyTidalCutoff(); }
-      // Binary formation changes Rho and Menc, but preserves U, updates P = (2/3) * Rho * U
-      if(binary_formation != BINARY_FORMATION_OFF) { applyBinaryFormation(); }
-
-      
-      for(int f = 0; f < NF; ++f) {
-	solveRelaxationLAPACKE(f);
-	solveRelaxationLAPACKE(f);
-	// solveRelaxationLAPACKE(f);
-	// solveRelaxationLAPACKE(f);
-	// solveRelaxationLAPACKE(f);
-      }
-      
-      realign();
-
-      // Sanity checks
-      sanityCheck();
-      
-      totalTime += Deltat;      
-      Deltat = Deltat * thres / maxChange;
-      ++step;
+    observer(static_cast<const ThreeFluidSim&>(*this));
+    while (!stopCondition()) {
+      advanceAcceptedStep();
+      observer(static_cast<const ThreeFluidSim&>(*this));
     }
-    
-    cout << "Simulation finished at t = " << totalTime << " (steps = " << step << ")" << endl;
   }
-
-  
 };
-
-
