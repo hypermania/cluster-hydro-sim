@@ -63,6 +63,29 @@ class PlotOutputTest(unittest.TestCase):
             rho.tofile(directory / f"central_Rho_{component}.dat")
             energy.tofile(directory / f"central_U_{component}.dat")
 
+    def test_actual_times_beyond_max_time_are_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.make_output(directory)
+            for name, suffix in (("paramNames.txt", "maxTime\n"),
+                                 ("paramTypes.txt", "Real64\n"),
+                                 ("paramOffsets.txt", "40\n")):
+                path = directory / name
+                path.write_text(path.read_text() + suffix)
+            path = directory / "param.dat"
+            path.write_bytes(path.read_bytes() + struct.pack("<d", 0.2))
+            run = plot_output.load_output(directory)
+            self.assertEqual(run.parameters["maxTime"], 0.2)
+            for data in (run.profiles, run.radii, run.central):
+                self.assertEqual(data.time[-1], 0.25)
+            for figure in (plot_output._radii_figure(run.radii, "overshoot"),
+                           plot_output._central_figure(run.central, "density", "overshoot")):
+                try:
+                    self.assertEqual(figure.axes[0].lines[0].get_xdata()[-1], 0.25)
+                    self.assertGreater(figure.axes[0].get_xlim()[1], 0.25)
+                finally:
+                    plot_output.plt.close(figure)
+
     def test_load_and_generate_every_plot_family(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             directory = Path(temporary_directory)

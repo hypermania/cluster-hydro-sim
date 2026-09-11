@@ -25,7 +25,11 @@ void near(double a,double b,double rel=2e-10,
     throw std::runtime_error(message.str());
   }
 }
-struct Count {int calls=0;void operator()(const ThreeFluidSim&){++calls;}};
+// Adaptive trajectories accumulate platform-dependent rounding; keep local
+// operator and invariant checks at the tighter default tolerance above.
+constexpr double trajectory_tolerance=1e-9;
+struct Count {int calls=0;double last_time=0;
+  void operator()(const ThreeFluidSim& s){++calls;last_time=s.totalTime;}};
 
 int main(){try {
   // These values both printed as 1.000000 in the old failure message.
@@ -42,6 +46,12 @@ int main(){try {
       message.find("check_statler.cpp:")!=std::string::npos;
   }
   require(diagnostic_checked,"regression diagnostic hides numerical difference");
+  near(0.15480564394170035,0.15480564391023888,trajectory_tolerance,
+       "reported Intel 100-step time");
+  bool regression_detected=false;
+  try{near(1.0+1e-8,1.0,trajectory_tolerance);}
+  catch(const std::runtime_error&){regression_detected=true;}
+  require(regression_detected,"trajectory tolerance hides a 1e-8 regression");
   const StatlerInitParam initial;
   const auto observing=statlerObserverParameters(initial);
   near(observing.time_unit_over_trh,2.4284946,1e-7);
@@ -67,11 +77,15 @@ int main(){try {
     near(obs.history.binary_number[1],direct?0.05921317884254938:0.05921317884250146);
     near(obs.history.energy[1],direct?-0.01633436448083242:-0.016334364480814084);
     near(obs.history.time_trh.back(),direct?0.15480564391023888:0.1614706543170104,
-         2e-10,direct?"direct: time_trh after 100 steps":"control: time_trh after 100 steps");
-    near(obs.history.binary_number.back(),direct?3.7803196421511673:3.944598556969823);
-    near(obs.history.central_density.back(),direct?0.25338476565548906:0.2540186390001849);
-    near(obs.history.mass.back(),direct?0.3315133739660246:0.33150299314851595);
-    near(obs.history.energy.back(),direct?-0.016171023627247684:-0.01617020194595756);
+         trajectory_tolerance,direct?"direct: time_trh after 100 steps":"control: time_trh after 100 steps");
+    near(obs.history.binary_number.back(),direct?3.7803196421511673:3.944598556969823,
+         trajectory_tolerance,"binary number after 100 steps");
+    near(obs.history.central_density.back(),direct?0.25338476565548906:0.2540186390001849,
+         trajectory_tolerance,"central density after 100 steps");
+    near(obs.history.mass.back(),direct?0.3315133739660246:0.33150299314851595,
+         trajectory_tolerance,"mass after 100 steps");
+    near(obs.history.energy.back(),direct?-0.016171023627247684:-0.01617020194595756,
+         trajectory_tolerance,"energy after 100 steps");
     obs.save(dir);
   }
   std::cout<<"legacy histories and independent parameters passed\n";
@@ -91,9 +105,13 @@ int main(){try {
   }
   reset();s.param.maxTime=0;Count zero;s.evolve(zero);
   require(s.step==0 && zero.calls==1,"equal endpoint must stop");
-  reset();s.param.maxTime=1e-6;Count endpoint;s.evolve(endpoint);
-  near(s.totalTime,1e-6,2e-10,"maxTime endpoint");
-  require(endpoint.calls==2,"endpoint observer count");
+  reset();s.param.maxSteps=100;s.param.maxTime=1e-6;
+  const double full_step=s.Deltat;
+  Count endpoint;s.evolve(endpoint);
+  near(s.totalTime,full_step,2e-10,"unclipped final step");
+  require(s.totalTime>s.param.maxTime && s.step==1 && endpoint.calls==2,
+          "stop after first full step crossing maxTime");
+  require(endpoint.last_time==s.totalTime,"observer must receive actual overshot time");
   reset();s.param.capture_coefficient=1e30;
   Count failure;bool aborted=false;
   try{s.evolve(failure);}catch(const std::runtime_error&){aborted=true;}

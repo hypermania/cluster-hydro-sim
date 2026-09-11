@@ -83,7 +83,8 @@ by `max_timestep` (also used when the measured change is zero). Density and
 formation changes are not included in this estimate; there are no retries
 or multiplicative growth clamps. Invalid capture transfers terminate the run.
 Evolution stops at the configured density, step or time limit;
-the final step is clipped to the remaining time interval.
+the final step is taken in full and may overshoot `maxTime`. Observers save
+the actual time, which both Python plotters use without endpoint clipping.
 
 ### Conduction and heating linearization
 
