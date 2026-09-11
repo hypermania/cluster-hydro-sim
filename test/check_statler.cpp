@@ -3,17 +3,45 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <iomanip>
+#include <source_location>
+#include <sstream>
 #include <stdexcept>
 
 void require(bool value,const char* text){if(!value)throw std::runtime_error(text);}
-void near(double a,double b,double rel=2e-10){
-  if(!std::isfinite(a)||!std::isfinite(b)||
-     std::abs(a-b)>rel*std::max({1e-15,std::abs(a),std::abs(b)}))
-    throw std::runtime_error("numeric regression: "+std::to_string(a)+" vs "+std::to_string(b));
+void near(double a,double b,double rel=2e-10,
+          const char* quantity="value",
+          const std::source_location where=std::source_location::current()){
+  const double scale=std::max({1e-15,std::abs(a),std::abs(b)});
+  const double error=std::abs(a-b);
+  if(!std::isfinite(a)||!std::isfinite(b)||error>rel*scale) {
+    std::ostringstream message;
+    message<<std::setprecision(std::numeric_limits<double>::max_digits10)
+      <<"numeric regression: "<<quantity<<" at "<<where.file_name()<<':'<<where.line()
+      <<"\n  actual="<<a<<" expected="<<b
+      <<"\n  difference="<<(a-b)<<" absolute_error="<<error
+      <<"\n  relative_error="<<error/scale<<" relative_tolerance="<<rel
+      <<" allowed_absolute_error="<<rel*scale;
+    throw std::runtime_error(message.str());
+  }
 }
 struct Count {int calls=0;void operator()(const ThreeFluidSim&){++calls;}};
 
 int main(){try {
+  // These values both printed as 1.000000 in the old failure message.
+  bool diagnostic_checked=false;
+  try{near(1.0000000003,1.0,2e-10,"diagnostic self-test");}
+  catch(const std::runtime_error& e){
+    const std::string message=e.what();
+    diagnostic_checked=message.find("actual=1.0000000003")!=std::string::npos &&
+      message.find("expected=1")!=std::string::npos &&
+      message.find("absolute_error=")!=std::string::npos &&
+      message.find("relative_error=")!=std::string::npos &&
+      message.find("relative_tolerance=")!=std::string::npos &&
+      message.find("allowed_absolute_error=")!=std::string::npos &&
+      message.find("check_statler.cpp:")!=std::string::npos;
+  }
+  require(diagnostic_checked,"regression diagnostic hides numerical difference");
   const StatlerInitParam initial;
   const auto observing=statlerObserverParameters(initial);
   near(observing.time_unit_over_trh,2.4284946,1e-7);
@@ -38,7 +66,8 @@ int main(){try {
     // checkpoints use the requested U-only controller, not the removed clamp.
     near(obs.history.binary_number[1],direct?0.05921317884254938:0.05921317884250146);
     near(obs.history.energy[1],direct?-0.01633436448083242:-0.016334364480814084);
-    near(obs.history.time_trh.back(),direct?0.15480564391023888:0.1614706543170104);
+    near(obs.history.time_trh.back(),direct?0.15480564391023888:0.1614706543170104,
+         2e-10,direct?"direct: time_trh after 100 steps":"control: time_trh after 100 steps");
     near(obs.history.binary_number.back(),direct?3.7803196421511673:3.944598556969823);
     near(obs.history.central_density.back(),direct?0.25338476565548906:0.2540186390001849);
     near(obs.history.mass.back(),direct?0.3315133739660246:0.33150299314851595);
@@ -63,7 +92,8 @@ int main(){try {
   reset();s.param.maxTime=0;Count zero;s.evolve(zero);
   require(s.step==0 && zero.calls==1,"equal endpoint must stop");
   reset();s.param.maxTime=1e-6;Count endpoint;s.evolve(endpoint);
-  near(s.totalTime,1e-6);require(endpoint.calls==2,"endpoint observer count");
+  near(s.totalTime,1e-6,2e-10,"maxTime endpoint");
+  require(endpoint.calls==2,"endpoint observer count");
   reset();s.param.capture_coefficient=1e30;
   Count failure;bool aborted=false;
   try{s.evolve(failure);}catch(const std::runtime_error&){aborted=true;}
