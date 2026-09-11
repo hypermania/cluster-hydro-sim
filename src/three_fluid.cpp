@@ -28,8 +28,7 @@ ThreeFluidSim::ThreeFluidSim() {}
 void ThreeFluidSim::initSolver(const int zones) {
   param.N = zones;
   for(int f = 0; f < NF; ++f){
-    trialU[f].resize(param.N);
-    trialP[f].resize(param.N);
+    previousU[f].resize(param.N);
     R[f].resize(param.N);
     Rho[f].resize(param.N);
     U[f].resize(param.N);
@@ -39,7 +38,6 @@ void ThreeFluidSim::initSolver(const int zones) {
     logRho[f].resize(param.N);
   }
   
-  formationSource = VectorXd::Zero(param.N);
   logR = VectorXd::Zero(param.N);
 
   // Init conduction solver

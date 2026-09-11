@@ -78,11 +78,11 @@ an active shell with positive density and pressure; the adjacent conduction
 stencil uses its density, while the fixed outer-`U` row acts as a prescribed
 thermal boundary. The timestep starts at `1e-3` and is adjusted using a target
 maximum relative change in `U` of `1e-3`. The measured change determines the
-next step together with the logarithmic change in maximum-species central
-density. Growth is bounded to factors `[0.5,1.5]`; exceeding the U target
-does not reject a step. Mode-2 formation is not included in this estimate.
-The Statler capture source additionally enforces a donor limit with retries,
-described below. Evolution stops at the configured density, step or time limit;
+next step through `dt_next = dt * u_change_tolerance / maxChange`, capped
+by `max_timestep` (also used when the measured change is zero). Density and
+formation changes are not included in this estimate; there are no retries
+or multiplicative growth clamps. Invalid capture transfers terminate the run.
+Evolution stops at the configured density, step or time limit;
 the final step is clipped to the remaining time interval.
 
 ### Conduction and heating linearization

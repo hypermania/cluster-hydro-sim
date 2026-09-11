@@ -26,6 +26,9 @@ class StatlerOutputTest(unittest.TestCase):
             self.assertEqual(np.any(p["c4"] != 0), mode == "direct")
             self.assertEqual(p["Deltat"], 0.001)
             self.assertEqual(p["runtime_validation"], 1)
+            self.assertEqual(p["u_change_tolerance"], 0.001)
+            for removed in ("thres", "density_change_tolerance", "donor_fraction_limit"):
+                self.assertNotIn(removed, p)
             self.assertNotIn("statler_observer", p)
             self.assertNotIn("stellar_number", p)
             self.assertNotIn("snapshot_times_trh", p)

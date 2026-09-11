@@ -3,12 +3,6 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace {
-constexpr double retry_safety = 0.8;
-constexpr int max_retries = 100;
-constexpr double growth_min = 0.5, growth_max = 1.5, error_floor = 1e-12;
-}
-
 double ThreeFluidSim::centralDensity() const {
   return std::max({Rho[FS][0],Rho[FB][0],Rho[FD][0]});
 }
@@ -37,9 +31,7 @@ void ThreeFluidSim::validateEvolution() const {
   auto positive=[](double x){return std::isfinite(x)&&x>0;};
   if(param.N<3 || param.maxSteps<0 || !std::isfinite(param.maxTime) || param.maxTime<0 ||
      !std::isfinite(totalTime) || totalTime<0 || !positive(Deltat) ||
-     !positive(param.thres) || !positive(param.StopDensity) || !positive(param.max_timestep) ||
-     !positive(param.donor_fraction_limit) || param.donor_fraction_limit>=1 ||
-     !positive(param.density_change_tolerance) ||
+     !positive(param.u_change_tolerance) || !positive(param.StopDensity) || !positive(param.max_timestep) ||
      (param.runtime_validation!=0 && param.runtime_validation!=1))
     throw std::invalid_argument("invalid evolution controls");
   if(param.binary_formation==BINARY_FORMATION_POWER_LAW &&
@@ -54,26 +46,16 @@ double ThreeFluidSim::captureNumberRate(int j) const {
     /std::pow(U[FS][j],0.6);
 }
 
-double ThreeFluidSim::prepareFormationSource() {
-  double fraction=0;
-  for(int j=0;j<param.N;++j) {
-    formationSource[j]=param.mb*captureNumberRate(j)*Deltat;
-    if(!std::isfinite(formationSource[j]) || formationSource[j]<0)
-      throw std::runtime_error("invalid formation source");
-    fraction=std::max(fraction,formationSource[j]/Rho[FS][j]);
-  }
-  return fraction;
-}
-
 void ThreeFluidSim::applyPowerLawFormation() {
-  // Re-evaluate after any preceding density sink. No changes before validation.
-  if(prepareFormationSource()>=1)
-    throw std::runtime_error("formation would exhaust donor density");
+  // Compute once per zone, after any density sink. On failure terminate the
+  // run: earlier zones may already be modified and must not be saved/resumed.
   double formed=0;
   for(int j=0;j<param.N;++j) {
     const double inner=j==0?0:R[FS][j-1];
     const double volume=(std::pow(R[FS][j],3)-std::pow(inner,3))/3;
-    const double transfer=formationSource[j];
+    const double transfer=param.mb*captureNumberRate(j)*Deltat;
+    if(!std::isfinite(transfer) || transfer<0 || !(transfer<Rho[FS][j]))
+      throw std::runtime_error("invalid capture transfer in zone "+std::to_string(j));
     const double birth_u=0.5*U[FS][j];
     formed+=transfer*volume/param.mb;
     U[FB][j]=(Rho[FB][j]*U[FB][j]+transfer*birth_u)/(Rho[FB][j]+transfer);
@@ -86,9 +68,12 @@ void ThreeFluidSim::applyPowerLawFormation() {
 
 double ThreeFluidSim::conductionChange() const {
   double result=0;
-  for(int f=0;f<NF;++f)
-    result=std::max(result,((U[f].array()-trialU[f].array()).abs()/trialU[f].array()).maxCoeff());
-  if(!std::isfinite(result)) throw std::runtime_error("nonfinite conduction change");
+  for(int f=0;f<NF;++f) for(int j=0;j<param.N;++j) {
+    const double change=std::abs(U[f][j]-previousU[f][j])/previousU[f][j];
+    if(!std::isfinite(change) || previousU[f][j]<=0 || U[f][j]<=0)
+      throw std::runtime_error("invalid conduction energy change");
+    result=std::max(result,change);
+  }
   return result;
 }
 
@@ -97,36 +82,25 @@ void ThreeFluidSim::projectHydrostatic() {
     for(int pass=0;pass<2;++pass) solveRelaxationLAPACKE(f);
 }
 
-void ThreeFluidSim::selectNextTimestep(double used,double change,double old_density) {
-  const double density_change=std::abs(std::log(centralDensity()/old_density));
-  const double control=std::max({change/param.thres,
-    density_change/param.density_change_tolerance,error_floor});
-  Deltat=std::min(param.max_timestep,
-                 used*std::clamp(1./control,growth_min,growth_max));
+void ThreeFluidSim::selectNextTimestep(double used,double change) {
+  if(!std::isfinite(change)||change<0)
+    throw std::runtime_error("invalid timestep error estimate");
+  Deltat=change>0?std::min(param.max_timestep,used*param.u_change_tolerance/change)
+                :param.max_timestep;
   if(!std::isfinite(Deltat)||Deltat<=0) throw std::runtime_error("invalid next timestep");
 }
 
 void ThreeFluidSim::advanceAcceptedStep() {
-  const double old_density=centralDensity();
-  for(int f=0;f<NF;++f){trialU[f]=U[f];trialP[f]=P[f];}
+  if(!std::isfinite(Deltat)||Deltat<=0)
+    throw std::runtime_error("invalid timestep");
   Deltat=std::min({Deltat,param.max_timestep,param.maxTime-totalTime});
+  if(Deltat<=0 || totalTime+Deltat==totalTime)
+    throw std::runtime_error("timestep cannot advance time");
   if(param.tidal_cutoff!=TIDAL_CUTOFF_OFF && param.tidal_cutoff_factor*Deltat>=1)
     throw std::runtime_error("tidal sink would exhaust density");
-  double change=0;
-  for(long long retry=0;;++retry) {
-    if(!std::isfinite(Deltat)||Deltat<=0 || totalTime+Deltat==totalTime)
-      throw std::runtime_error("timestep cannot advance time");
-    solveConductionLAPACKE();
-    if(param.runtime_validation) sanityCheck();
-    change=conductionChange();
-    const double fraction=param.binary_formation==BINARY_FORMATION_POWER_LAW?
-      prepareFormationSource():0;
-    if(fraction<=param.donor_fraction_limit) break;
-    for(int f=0;f<NF;++f){U[f]=trialU[f];P[f]=trialP[f];}
-    if(retry>=max_retries) throw std::runtime_error("formation retry limit");
-    Deltat*=retry_safety*param.donor_fraction_limit/fraction;
-    ++rejected_steps;
-  }
+  previousU=U;
+  solveConductionLAPACKE();
+  const double change=conductionChange();
   if(param.tidal_cutoff!=TIDAL_CUTOFF_OFF) applyTidalCutoff();
   if(param.binary_formation!=BINARY_FORMATION_OFF) applyBinaryFormation();
   projectHydrostatic();
@@ -135,5 +109,5 @@ void ThreeFluidSim::advanceAcceptedStep() {
   const double used=Deltat;
   totalTime+=used;
   ++step;
-  selectNextTimestep(used,change,old_density);
+  selectNextTimestep(used,change);
 }

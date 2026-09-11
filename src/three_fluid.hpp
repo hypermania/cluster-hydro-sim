@@ -51,10 +51,8 @@ struct ThreeFluidParam {
   double StopDensity = 1e12;
   double maxTime = 1e4;
   long long int maxSteps = 10000000;
-  double thres = 1e-3;
+  double u_change_tolerance = 1e-3;
   double max_timestep = 1.0;
-  double donor_fraction_limit = 0.005;
-  double density_change_tolerance = 0.025;
   double capture_coefficient = 0; // PT number source: A rho_s^2 U_s^-0.6
   long long int runtime_validation = 1; // Optional full-state scans.
 };
@@ -72,9 +70,7 @@ public:
   // Adaptive timestep is evolving state, not a second configuration copy.
   double Deltat = 1e-3;
   double cumulative_formed_binaries = 0.0;
-  long long int rejected_steps = 0;
-  std::array<Eigen::VectorXd, NF> trialU, trialP;
-  Eigen::VectorXd formationSource;
+  std::array<Eigen::VectorXd, NF> previousU; // Pre-conduction values for timestep control.
 
   // Internal state
   double totalTime = 0.0;
@@ -133,13 +129,12 @@ public:
   void applyTidalCutoff();
   double centralDensity() const;
   double captureNumberRate(int zone) const;
-  double prepareFormationSource();
   void applyPowerLawFormation();
   void projectHydrostatic();
   void validateEvolution() const;
   void advanceAcceptedStep();
   double conductionChange() const;
-  void selectNextTimestep(double used_dt, double energy_change, double old_density);
+  void selectNextTimestep(double used_dt, double energy_change);
   bool stopCondition() const;
   void sanityCheck() const;
 

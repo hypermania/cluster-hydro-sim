@@ -47,12 +47,14 @@ void initializeCaptureCluster(ThreeFluidSim& s,const StatlerInitParam& init) {
     p.c1[f*NF+FD]=p.c1[FD*NF+f]=0;
     p.c4[f*NF+FD]=p.c4[FD*NF+f]=0;
   }
+  // Maxwellian average of Statler et al. (1987), Eq. (2.1), including the
+  // unordered-pair factor 1/2; u_s=3 sigma_s^2/2. See the reproduction notes.
   const double coefficient=107*std::tgamma(0.9)/
     (50*std::pow(2.,0.7)*std::pow(3.,0.4)*std::pow(std::numbers::pi,1.5));
   p.capture_coefficient=coefficient*
     std::pow(init.stellar_radius_rsun*solar_radius_pc/init.length_unit_pc,0.9)*
     std::pow(p.ms,-1.9)/units.reference_coulomb_log;
   s.Deltat=p.Deltat;s.totalTime=0;s.step=0;
-  s.cumulative_formed_binaries=0;s.rejected_steps=0;
+  s.cumulative_formed_binaries=0;
   s.validateEvolution();
 }

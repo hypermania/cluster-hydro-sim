@@ -53,7 +53,7 @@ initializer performs physical-unit conversions; physical constants are
 `constexpr` there, not adjustable evolution options. `param.Deltat` is the
 initial timestep and `sim.Deltat` is the current adaptive timestep. The
 former is not overwritten during evolution. Source exponents, capture
-partition, two relaxation passes, retry safety and growth bounds are fixed
+partition and two relaxation passes are fixed
 parts of the implemented method, not runtime switches.
 
 Physical metadata: `N_star=3e5`, stellar mass `0.7 Msun`, stellar radius
@@ -82,6 +82,17 @@ A=\frac{107\Gamma(0.9)}{50\,2^{0.7}3^{0.4}\pi^{3/2}}
 \frac{\widehat m_s^{-1.9}}{\ln(0.8N_*)}.
 \]
 
+This is a derived local Maxwellian average of Statler, Ostriker and Cohn
+(1987), equation (2.1), p. 627: the cross section is
+`Sigma(w)=8.56 R_star^2 (w/v_star)^(-2.2)`, with
+`v_star^2=2 G m_star/R_star`. The binary-number source is
+`S=0.5 n_s^2 <Sigma(w) w>`; the factor 0.5 avoids double-counting pairs.
+For one-dimensional stellar dispersion sigma, the relative-speed moment is
+`<w^(-6/5)>=Gamma(9/10)/(2^(1/5) sqrt(pi) sigma^(6/5))`.
+Using `u=3 sigma^2/2` and the HydroSim units gives A above. It is not a
+numbered rate formula quoted directly from the paper, nor an exact
+replacement for its evolved distribution functions.
+
 The applied source is tidal capture only. The three-body diagnostic is
 recorded as a counterfactual rate, not applied formation. Capture conserves
 local mass but removes resolved random energy
@@ -98,32 +109,34 @@ and physics rather than treating numerical mass loss as physical escape.
 ## Shared numerical machinery
 
 `evolve()` only validates, observes and calls `advanceAcceptedStep()`.
-Separate functions prepare capture sources, apply formation, project
+Separate functions apply formation, project
 hydrostatic equilibrium, compute the conduction change and select the next
 timestep. The accepted-step order remains conduction, optional tidal sink,
 formation, two corrections per fluid, and realignment.
 
-The bounded controller compares fractional conduction changes to `thres`
-and logarithmic central-density changes to `density_change_tolerance`.
-Central density for control and stopping is the maximum over species.
-The controller clamps timestep growth and caps the step at the remaining integration
-interval. The capture donor limit retries conduction at a smaller step
-before any density changes; both U and P are restored. This is not a full
-post-projection error-control or rollback scheme. Growth factors are fixed
-at `[0.5,1.5]`, the error floor is `1e-12`, retry safety is `0.8`, and the
-retry limit is 100. These constants are recorded by the source revision.
+The controller uses only the maximum fractional U change during conduction:
+`dt_next=min(max_timestep,dt_used*u_change_tolerance/change)`.
+For exactly zero change, it uses `max_timestep`. It has no density term,
+growth clamp, error floor or retry mechanism. The next step is clipped to
+the remaining integration interval. Central density is used only for stopping.
+Only pre-conduction U is retained to measure the change; pressure backups,
+source buffers and rejected-step counters have been removed.
+
+Capture computes the transfer once per zone in place, after any tidal sink.
+An invalid transfer or exhausted donor throws immediately. Earlier zones
+may already have changed; a failed simulation must terminate, not save or
+resume that partial state. There is no rollback and no 0.5% donor limit.
 
 Intentional shared-driver corrections: stop at time-limit equality, clip
 the last step, bound a zero-error timestep proposal, and throw on numerical
-failure instead of `exit(0)`. There is now one bounded controller for all
-examples, not a legacy/new dispatcher. This deliberately changes timestep
-histories for examples that previously used the unbounded U-only controller.
-Existing
+failure instead of `exit(0)`. The original positive-error U-only update is
+restored, with the finite maximum step and endpoint guards retained. Existing
 interpolation-based realignment and the outer fixed-temperature conduction
 row are unchanged, including their conservation limitations.
 
 `sim.param.runtime_validation=0` disables automatic full-state finiteness,
-positivity and shell-order scans; it defaults to 1. Cheap configuration,
+positivity and shell-order scans; it defaults to 1. There is one automatic
+scan per step, after realignment, plus the initial-state check. Cheap configuration,
 solver-error, donor-depletion and time-advance guards remain mandatory.
 `sanityCheck()` can always be invoked explicitly. Use `main-strict` when
 relying on IEEE finiteness checks; fast-math can invalidate those checks.
@@ -157,12 +170,12 @@ the fluid closure reproduces every plotted physical quantity.
 
 `make check` runs the hydrostatic test, `check_statler`, bounded checks of
 the eight existing examples, and Python tests.
-The new checks cover local formation mass/energy balance, legacy 100-step
-direct/control values, observer lengths and saved parameter readback,
-time-limit equality and clipping, rejected-trial isolation/restoration,
-zero-error timestep control, observer composition, and runtime validation
-on/off. The retry test compares the accepted state bitwise with a fresh
-run using the reduced initial timestep.
+The checks cover local formation mass/energy balance, unchanged first-step
+values and new 100-step U-only checkpoints, observer lengths and parameter
+readback, time-limit equality and clipping, immediate formation failure
+without acceptance or output, zero-error U-only control, observer composition,
+and runtime validation on/off. A finite 1% donor transfer verifies that the
+former 0.5% restriction is gone.
 
 Historical validation of commit `683fdfb`, before the parameter simplification:
 the migrated 500-zone direct run reaches `1e4 trh` in 12,141 accepted steps;
@@ -179,9 +192,7 @@ flags. Do not mix Eigen objects compiled with different architecture or
 alignment flags in one executable; the comparison builds used the same
 `-O3 -march=native -DNDEBUG` strict-IEEE settings throughout.
 
-The current checks retain the 100-step Statler reference values (relative
-tolerance `2e-10`). The previous full-history and eight-example bitwise
-claims above do not extend to the intentionally unified timestep controller.
-Both command-line Statler configurations were also run for 1,000 steps after
-the simplification: all 16 history arrays match the corresponding prefixes
-of the previous full runs bitwise.
+At `c709cb7`, both command-line Statler configurations also matched the
+previous full-history prefixes bitwise over 1,000 steps. That comparison
+predates the requested restoration of U-only control: it is historical,
+not a claim for the current timestep history.
