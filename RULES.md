@@ -9,24 +9,22 @@ to enforce these rules.
 These rules have been reviewed by the project owner. Changes require the
 owner's agreement; do not silently introduce exceptions.
 
-## 1. Save every run setting in `ThreeFluidParam`
+## 1. Keep evolution, initialization and observer parameters separate
 
-- Every configurable choice needed to reproduce a run must be represented
-  in `ThreeFluidParam` and included in the saved parameter record.
-- Include physical scales and units, particle masses, initial-profile type
-  and parameters, grid settings, enabled processes, source coefficients,
-  boundary conditions, tidal settings, solver tolerances, timestep controls,
-  stopping conditions and random seeds when applicable.
-- Include observer configuration that determines the saved result: sampling
-  times or cadence, selected diagnostics, Lagrangian mass fractions and
-  output format. Do not leave reproducibility-critical settings only in
-  runner literals, comments, command-line arguments or observer constructors.
+- `ThreeFluidSim::param` owns dimensionless evolution settings only. Keep
+  initialization inputs and observer settings in their own parameter structs
+  so that initialization, evolution and observation compose independently.
+- Save the effective parameter records for all three parts. Physical-unit
+  conversion belongs to external initializers or scripts, not `ThreeFluid*`.
+  Declare physical constants with `constexpr`; do not turn constants into
+  run options. Observer selection is the object passed to `evolve()`, not
+  a simulator flag.
 - Command-line arguments and presets may populate the configuration; they
   must not bypass its serialization. Save the effective configuration after
   initialization and coefficient overrides, before evolution changes state.
-- Avoid independently maintained copies of the same setting. If simulator
-  members mirror parameter fields, use a single explicit import/export path
-  and test that values agree. Update serialization and readers when adding
+- Avoid independently maintained copies of the same setting. Access the
+  owning parameter struct directly; do not add a copying getter. Update
+  serialization and readers when adding
   a field; never silently omit a value because its type is inconvenient.
 - Separate configuration from evolving state. For example, record the
   initial timestep as a setting; the current adaptive timestep belongs to
@@ -83,6 +81,10 @@ owner's agreement; do not silently introduce exceptions.
 
 ## 5. Keep runners declarative and features reusable
 
+- Keep changes and the number of options minimal. Prefer one canonical
+  implementation to a dispatcher retaining deprecated alternatives. Keep
+  `initPlummer` and `initCoeffs` canonical; retain the Yiming initialization
+  functions for compatibility but mark them deprecated.
 - A runner should explain a physical setup through configuration, not
   implement numerical methods. Keep initialization in reusable functions.
 - Add optional physics through explicit parameters and named operations.
@@ -146,7 +148,8 @@ owner's agreement; do not silently introduce exceptions.
 
 Before handing off a code change, check:
 
-1. Are all new run settings saved in `ThreeFluidParam`?
+1. Are evolution, initialization and observer settings independently owned
+   and saved, with no dimensional inputs in `ThreeFluid*`?
 2. Does every evolution runner still use the shared `evolve()`?
 3. Are distinct operations implemented as named functions?
 4. Is saving/output observer-based and observational only?

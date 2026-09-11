@@ -1,6 +1,7 @@
 /main
 /check_hydrostatic_relaxation
 /check_statler
+/check_examples
 /main-strict
 /output/
 *.o

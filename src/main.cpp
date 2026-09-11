@@ -1,21 +1,30 @@
 #include "three_fluid.hpp"
 #include "observer.hpp"
-#include "reproduction.hpp"
+#include "statler_reproduction.hpp"
 #include "statler_observer.hpp"
 #include <filesystem>
 
 void statler_reproduction(bool direct, const std::string& directory,
                           long long max_steps, double final_time_trh) {
   if(directory.empty()) throw std::invalid_argument("output directory is empty");
-  ThreeFluidParam settings=statlerParameters(direct);
-  settings.maxSteps=max_steps;
-  settings.final_time_trh=final_time_trh;
+  if(!std::isfinite(final_time_trh) || final_time_trh<0)
+    throw std::invalid_argument("invalid final time");
+  const StatlerInitParam initial;
+  const auto observing=statlerObserverParameters(initial);
   ThreeFluidSim sim;
-  initializeCaptureCluster(sim,settings);
+  sim.param=statlerParameters();
+  sim.param.maxSteps=max_steps;
+  sim.param.maxTime=final_time_trh/observing.time_unit_over_trh;
+  initializeCaptureCluster(sim,initial);
+  if(!direct) sim.param.c4.fill(0);
   std::filesystem::create_directories(directory);
   const std::string output=directory.back()=='/'?directory:directory+"/";
   sim.saveParams(output);
-  StatlerObserver observer(sim.parameters());
+  std::filesystem::create_directories(output+"initialization");
+  std::filesystem::create_directories(output+"observer");
+  save_param_for_Mathematica(initial,output+"initialization/");
+  save_param_for_Mathematica(observing,output+"observer/");
+  StatlerObserver observer(observing);
   sim.evolve(observer);
   observer.save(output);
 }
@@ -30,8 +39,8 @@ void one_fluid_split_in_two(void){
     sim.initCoeffsYiming();
 
     // Manually make DM the same as single star
-    sim.md = sim.ms;
-    sim.c2[FD] = sim.c2[FS];
+    sim.param.md = sim.param.ms;
+    sim.param.c2[FD] = sim.param.c2[FS];
 
     sim.initPlummerYiming(1.0, 1e-10, 1e-10, 1.0, 1.0);
 
@@ -52,8 +61,8 @@ void one_fluid_split_in_two(void){
     sim.initCoeffsYiming();
 
     // Manually make DM the same as single star
-    sim.md = sim.ms;
-    sim.c2[FD] = sim.c2[FS];
+    sim.param.md = sim.param.ms;
+    sim.param.c2[FD] = sim.param.c2[FS];
   
     sim.initPlummerYiming(0.5, 1e-10, 1.0, 1.0, 1.0);
 
@@ -79,8 +88,8 @@ void tidal_bench_single(void){
     sim.initCoeffsYiming();
 
     // Manually make DM the same as single star
-    sim.md = sim.ms;
-    sim.c2[FD] = sim.c2[FS];
+    sim.param.md = sim.param.ms;
+    sim.param.c2[FD] = sim.param.c2[FS];
 
     sim.initPlummerYiming(1.0, 1e-10, 1e-10, 1.0, 1.0);
     
@@ -102,11 +111,11 @@ void tidal_bench_single(void){
     sim.initCoeffsYiming();
 
     // Manually make DM the same as single star
-    sim.md = sim.ms;
-    sim.c2[FD] = sim.c2[FS];
-    sim.tidal_cutoff = 1;
-    sim.tidal_radius = 10.0;
-    sim.tidal_cutoff_factor = 50.0;
+    sim.param.md = sim.param.ms;
+    sim.param.c2[FD] = sim.param.c2[FS];
+    sim.param.tidal_cutoff = 1;
+    sim.param.tidal_radius = 10.0;
+    sim.param.tidal_cutoff_factor = 50.0;
 
     // sim.printParams();
     sim.initPlummerYiming(1.0, 1e-10, 1e-10, 1.0, 1.0);
@@ -132,9 +141,9 @@ void tidal_bench_AB(void){
     sim.initCoeffsYiming();
 
     // Manually set DM mass
-    sim.md = 0.1 * sim.ms;
-    // sim.md = sim.ms;
-    // sim.c2[FD] = 0.1 * sim.c2[FS];
+    sim.param.md = 0.1 * sim.param.ms;
+    // sim.param.md = sim.param.ms;
+    // sim.param.c2[FD] = 0.1 * sim.param.c2[FS];
 
     sim.initPlummerYiming(0.5, 1e-10, 1.0, 1.0, 1.0);
 
@@ -156,10 +165,10 @@ void tidal_bench_AB(void){
     sim.initCoeffsYiming();
 
     // Manually set DM mass
-    sim.md = 0.1 * sim.ms;
-    sim.tidal_cutoff = 1;
-    sim.tidal_cutoff_factor = 10;
-    sim.tidal_radius = 2;
+    sim.param.md = 0.1 * sim.param.ms;
+    sim.param.tidal_cutoff = 1;
+    sim.param.tidal_cutoff_factor = 10;
+    sim.param.tidal_radius = 2;
 
     sim.initPlummerYiming(0.5, 1e-10, 1.0, 1.0, 1.0);
 
@@ -185,15 +194,15 @@ void binary_formation(void){
     ThreeFluidSim sim;
     sim.initSolver(N);
     sim.initPlummer(1.0, 1e-10, 1e-10, 1.0, 1.0);
-    const double Mtot = sim.Menc[FS][sim.N-1] + sim.Menc[FB][sim.N-1] + sim.Menc[FD][sim.N-1];
-    sim.ms = Mtot / 1e6; // Assuming cluster mass = 10^6 ms
-    sim.mb = 2.0 * sim.ms;
-    sim.md = 1e-10 * sim.ms;
+    const double Mtot = sim.Menc[FS][sim.param.N-1] + sim.Menc[FB][sim.param.N-1] + sim.Menc[FD][sim.param.N-1];
+    sim.param.ms = Mtot / 1e6; // Assuming cluster mass = 10^6 ms
+    sim.param.mb = 2.0 * sim.param.ms;
+    sim.param.md = 1e-10 * sim.param.ms;
     sim.initCoeffs(1e6, 2.0, 1e-10);
     // // Artificially turn off dynamical heating to check
     // for(int f = 0; f < NF; ++f){
     //   for(int f2 = 0; f2 < NF; ++f2){
-    // 	sim.c1[f][f2] = 0.0;
+    // 	sim.param.c1[f*NF+f2] = 0.0;
     //   }
     // }
 
@@ -215,16 +224,16 @@ void binary_formation(void){
     ThreeFluidSim sim;
     sim.initSolver(N);
     sim.initPlummer(1.0, 1e-10, 1e-10, 1.0, 1.0);
-    const double Mtot = sim.Menc[FS][sim.N-1] + sim.Menc[FB][sim.N-1] + sim.Menc[FD][sim.N-1];
-    sim.ms = Mtot / 1e6; // Assuming cluster mass = 10^6 ms
-    sim.mb = 2.0 * sim.ms;
-    sim.md = 1e-10 * sim.ms;
+    const double Mtot = sim.Menc[FS][sim.param.N-1] + sim.Menc[FB][sim.param.N-1] + sim.Menc[FD][sim.param.N-1];
+    sim.param.ms = Mtot / 1e6; // Assuming cluster mass = 10^6 ms
+    sim.param.mb = 2.0 * sim.param.ms;
+    sim.param.md = 1e-10 * sim.param.ms;
     sim.initCoeffs(1e6, 2.0, 1e-10);
-    sim.binary_formation = BINARY_FORMATION_MODE_2;
+    sim.param.binary_formation = BINARY_FORMATION_MODE_2;
     // Artificially turn off binary heating to check
     for(int f = 0; f < NF; ++f){
       for(int f2 = 0; f2 < NF; ++f2){
-	sim.c4[f][f2] = 0.0;
+	sim.param.c4[(f)*NF+(f2)] = 0.0;
       }
     }
 
@@ -249,12 +258,12 @@ void binary_formation(void){
     ThreeFluidSim sim;
     sim.initSolver(N);
     sim.initPlummer(1.0, 1e-10, 1e-10, 1.0, 1.0);
-    const double Mtot = sim.Menc[FS][sim.N-1] + sim.Menc[FB][sim.N-1] + sim.Menc[FD][sim.N-1];
-    sim.ms = Mtot / 1e6; // Assuming cluster mass = 10^6 ms
-    sim.mb = 2.0 * sim.ms;
-    sim.md = 1e-10 * sim.ms;
+    const double Mtot = sim.Menc[FS][sim.param.N-1] + sim.Menc[FB][sim.param.N-1] + sim.Menc[FD][sim.param.N-1];
+    sim.param.ms = Mtot / 1e6; // Assuming cluster mass = 10^6 ms
+    sim.param.mb = 2.0 * sim.param.ms;
+    sim.param.md = 1e-10 * sim.param.ms;
     sim.initCoeffs(1e6, 2.0, 1e-10);
-    sim.binary_formation = BINARY_FORMATION_MODE_2;
+    sim.param.binary_formation = BINARY_FORMATION_MODE_2;
 
     ApproximateTimeObserver observer1({0.0, 1.0, 10.0, 100.0, 692.0});
     LagrangianRadiiObserver observer2({0.01, 0.05, 0.1, 0.2, 0.5, 0.7});

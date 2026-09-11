@@ -78,10 +78,11 @@ an active shell with positive density and pressure; the adjacent conduction
 stencil uses its density, while the fixed outer-`U` row acts as a prescribed
 thermal boundary. The timestep starts at `1e-3` and is adjusted using a target
 maximum relative change in `U` of `1e-3`. The measured change determines the
-next step; the legacy controller does not reject a step for exceeding the
-target. Its mode-2 formation is not included in this estimate. The Statler
-example selects a bounded controller with a capture donor limit, described
-below. Evolution stops at the configured density, step or time limit;
+next step together with the logarithmic change in maximum-species central
+density. Growth is bounded to factors `[0.5,1.5]`; exceeding the U target
+does not reject a step. Mode-2 formation is not included in this estimate.
+The Statler capture source additionally enforces a donor limit with retries,
+described below. Evolution stops at the configured density, step or time limit;
 the final step is clipped to the remaining time interval.
 
 ### Conduction and heating linearization
@@ -260,6 +261,12 @@ The parameter metadata consists of `param.dat`, `paramNames.txt`,
 `paramTypes.txt`, and `paramOffsets.txt`. `param.dat` is a raw C++
 `ThreeFluidParam` object, including implementation-dependent layout and
 padding; use the accompanying type and offset files when importing it.
+Evolution settings are owned directly by `sim.param`; `sim.param.Deltat`
+is the initial timestep, while `sim.Deltat` is adaptive state. Initialization
+and observer settings are separate records, not fields in `ThreeFluidParam`.
+The Statler runner saves those under `initialization/` and `observer/`.
+See [the reproduction notes](docs/statler-reproduction.md) for the parameter
+split and the optional `param.runtime_validation` full-state checks.
 
 ### Plotting packed output
 

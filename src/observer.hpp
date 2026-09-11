@@ -19,7 +19,7 @@ struct KeyValueObserver {
     for(int f = 0; f < NF; ++f){
       central_Rho[f].push_back(Rho[f][0]);
       central_U[f].push_back(U[f][0]);
-      total_M[f].push_back(Menc[f][sim.N-1]);
+      total_M[f].push_back(Menc[f][sim.param.N-1]);
     }
   }
 
@@ -99,7 +99,7 @@ struct LagrangianRadiiObserver {
     const auto &Rho = sim.Rho;
     const auto &Menc = sim.Menc;
     const double t = sim.totalTime;
-    const long long int N = sim.N;
+    const long long int N = sim.param.N;
     
     //const size_t current_idx = t_list.size();
     t_list.push_back(t);

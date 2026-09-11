@@ -43,7 +43,7 @@ CXXFLAGS += -DNDEBUG
 # its finiteness and fixed-point checks retain standard IEEE semantics.
 check_CXXFLAGS = $(filter-out -ffast-math,$(CXXFLAGS))
 check_NAME := check_hydrostatic_relaxation
-solver_check_OBJS := test/three_fluid.o test/evolution.o test/reproduction.o
+solver_check_OBJS := test/three_fluid.o test/evolution.o test/statler_reproduction.o
 check_OBJS := test/check_hydrostatic_relaxation.o $(solver_check_OBJS)
 
 
@@ -59,13 +59,20 @@ all: $(program_NAME)
 $(program_NAME): $(program_OBJS)
 	$(LINK.cc) $(program_OBJS) -o $(program_NAME) $(LDLIBS)
 
-check: $(check_NAME) check_statler
+check: $(check_NAME) check_statler check_examples
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(check_NAME)
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_statler
+	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_examples
 	python3 -m unittest discover -s test -p 'test_*.py'
 
 check_statler: test/check_statler.o $(solver_check_OBJS)
 	$(CXX) $(check_CXXFLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+check_examples: test/check_examples.o $(solver_check_OBJS)
+	$(CXX) $(check_CXXFLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+test/check_examples.o: test/check_examples.cpp $(program_HPP_SRCS)
+	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
 
 main-strict: test/main.o $(solver_check_OBJS)
 	$(CXX) $(check_CXXFLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
@@ -79,7 +86,7 @@ test/check_statler.o: test/check_statler.cpp $(program_HPP_SRCS)
 test/evolution.o: src/evolution.cpp $(program_HPP_SRCS)
 	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
 
-test/reproduction.o: src/reproduction.cpp $(program_HPP_SRCS)
+test/statler_reproduction.o: src/statler_reproduction.cpp $(program_HPP_SRCS)
 	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
 
 $(check_NAME): $(check_OBJS)
@@ -106,7 +113,7 @@ clean:
 	$(RM) $(program_OBJS)
 	$(RM) $(check_NAME)
 	$(RM) $(check_OBJS)
-	$(RM) check_statler main-strict test/check_statler.o test/main.o
+	$(RM) check_statler check_examples main-strict test/check_statler.o test/check_examples.o test/main.o
 	$(RM) $(program_CXX_ASMS)
 	$(RM) $(wildcard *~)
 	$(RM) -r html latex

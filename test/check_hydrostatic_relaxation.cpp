@@ -40,7 +40,7 @@ double relative_difference(const double value, const double reference) {
 
 double hydrostatic_residual(const ThreeFluidSim &sim, const int fluid) {
   double maximum = 0.0;
-  for (int i = 0; i < sim.N - 1; ++i) {
+  for (int i = 0; i < sim.param.N - 1; ++i) {
     const double span = (i == 0)
       ? sim.R[fluid][1]
       : sim.R[fluid][i+1] - sim.R[fluid][i-1];
@@ -55,7 +55,7 @@ double hydrostatic_residual(const ThreeFluidSim &sim, const int fluid) {
         : std::abs(pressure_term + gravity_term));
   }
 
-  const int last = sim.N - 1;
+  const int last = sim.param.N - 1;
   const double width = sim.R[fluid][last] - sim.R[fluid][last-1];
   const double pressure_term = -sim.P[fluid][last] / width;
   const double gravity_term = total_mass_at(sim, last)
@@ -217,12 +217,12 @@ bool check_production_initializer(const bool yiming) {
     initial_residual = std::max(initial_residual,
                                 hydrostatic_residual(sim, f));
     active_outer_shell = active_outer_shell
-      && finite_bits(sim.Rho[f][sim.N-1])
-      && finite_bits(sim.P[f][sim.N-1])
-      && finite_bits(sim.U[f][sim.N-1])
-      && sim.Rho[f][sim.N-1] > 0.0
-      && sim.P[f][sim.N-1] > 0.0
-      && sim.U[f][sim.N-1] > 0.0;
+      && finite_bits(sim.Rho[f][sim.param.N-1])
+      && finite_bits(sim.P[f][sim.param.N-1])
+      && finite_bits(sim.U[f][sim.param.N-1])
+      && sim.Rho[f][sim.param.N-1] > 0.0
+      && sim.P[f][sim.param.N-1] > 0.0
+      && sim.U[f][sim.param.N-1] > 0.0;
   }
 
   for (int f = 0; f < NF; ++f) {
@@ -236,7 +236,7 @@ bool check_production_initializer(const bool yiming) {
   for (int f = 0; f < NF; ++f) {
     relaxed_residual = std::max(relaxed_residual,
                                 hydrostatic_residual(sim, f));
-    for (int i = 0; i < sim.N; ++i) {
+    for (int i = 0; i < sim.param.N; ++i) {
       maximum_relaxation_change = std::max({
         maximum_relaxation_change,
         relative_difference(sim.R[f][i], initial_radius[f][i]),
@@ -247,8 +247,8 @@ bool check_production_initializer(const bool yiming) {
   }
 
   const std::array<double, NF> mass_before_realign{
-    sim.Menc[FS][sim.N-1], sim.Menc[FB][sim.N-1],
-    sim.Menc[FD][sim.N-1]};
+    sim.Menc[FS][sim.param.N-1], sim.Menc[FB][sim.param.N-1],
+    sim.Menc[FD][sim.param.N-1]};
   sim.realign();
   double realigned_residual = 0.0;
   double maximum_realign_mass_error = 0.0;
@@ -257,21 +257,21 @@ bool check_production_initializer(const bool yiming) {
                                   hydrostatic_residual(sim, f));
     maximum_realign_mass_error = std::max(
       maximum_realign_mass_error,
-      relative_difference(sim.Menc[f][sim.N-1], mass_before_realign[f]));
+      relative_difference(sim.Menc[f][sim.param.N-1], mass_before_realign[f]));
     active_outer_shell = active_outer_shell
-      && sim.Rho[f][sim.N-1] > 0.0 && sim.P[f][sim.N-1] > 0.0
-      && sim.U[f][sim.N-1] > 0.0;
+      && sim.Rho[f][sim.param.N-1] > 0.0 && sim.P[f][sim.param.N-1] > 0.0
+      && sim.U[f][sim.param.N-1] > 0.0;
   }
 
   const std::array<double, NF> outer_energy_before{
-    sim.U[FS][sim.N-1], sim.U[FB][sim.N-1], sim.U[FD][sim.N-1]};
+    sim.U[FS][sim.param.N-1], sim.U[FB][sim.param.N-1], sim.U[FD][sim.param.N-1]};
   sim.solveConductionLAPACKE();
   double maximum_outer_conduction_change = 0.0;
   bool finite_after_conduction = true;
   for (int f = 0; f < NF; ++f) {
     maximum_outer_conduction_change = std::max(
       maximum_outer_conduction_change,
-      relative_difference(sim.U[f][sim.N-1], outer_energy_before[f]));
+      relative_difference(sim.U[f][sim.param.N-1], outer_energy_before[f]));
     finite_after_conduction = finite_after_conduction
       && sim.U[f].array().isFinite().all()
       && sim.P[f].array().isFinite().all();
@@ -286,7 +286,7 @@ bool check_production_initializer(const bool yiming) {
     && maximum_outer_conduction_change < invariant_tolerance;
 
   std::cout << "initializer=" << (yiming ? "Yiming" : "Plummer")
-            << " zones=" << sim.N
+            << " zones=" << sim.param.N
             << " initial_residual=" << initial_residual
             << " relaxed_residual=" << relaxed_residual
             << " realigned_residual=" << realigned_residual

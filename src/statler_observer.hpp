@@ -10,6 +10,13 @@
 #include <string>
 #include <vector>
 
+struct StatlerObserverParam {
+  double time_unit_myr = 1;
+  double time_unit_over_trh = 1;
+  double reference_coulomb_log = 1;
+  std::array<double, 9> snapshot_times_trh = {0,1,5,10,20,13000./225,100,1000,10000};
+};
+
 // Reference-unit conversions and diagnostic approximations belong to observers,
 // not the simulator's dimensionless internal state.
 namespace statler_diagnostics {
@@ -32,7 +39,7 @@ inline double shell_volume(const ThreeFluidSim &sim, const int fluid,
 inline double total_mass(const ThreeFluidSim &sim) {
   double result = 0.0;
   for (int fluid = 0; fluid < NF; ++fluid) {
-    result += sim.Menc[fluid][sim.N - 1];
+    result += sim.Menc[fluid][sim.param.N - 1];
   }
   return result;
 }
@@ -41,7 +48,7 @@ inline double total_energy(const ThreeFluidSim &sim) {
   double random_energy = 0.0;
   double gravitational_energy = 0.0;
   double enclosed_mass = 0.0;
-  for (int zone = 0; zone < sim.N; ++zone) {
+  for (int zone = 0; zone < sim.param.N; ++zone) {
     const double inner = zone == 0 ? 0.0 : sim.R[FS][zone - 1];
     const double outer = sim.R[FS][zone];
     double density = 0.0;
@@ -66,7 +73,7 @@ inline double half_mass_radius(const ThreeFluidSim &sim) {
   const double target = 0.5 * total_mass(sim);
   double inner_mass = 0.0;
   double inner_radius = 0.0;
-  for (int zone = 0; zone < sim.N; ++zone) {
+  for (int zone = 0; zone < sim.param.N; ++zone) {
     double outer_mass = 0.0;
     for (int fluid = 0; fluid < NF; ++fluid) {
       outer_mass += sim.Menc[fluid][zone];
@@ -83,7 +90,7 @@ inline double half_mass_radius(const ThreeFluidSim &sim) {
     inner_mass = outer_mass;
     inner_radius = sim.R[FS][zone];
   }
-  return sim.R[FS][sim.N - 1];
+  return sim.R[FS][sim.param.N - 1];
 }
 
 inline double core_radius(const ThreeFluidSim &sim) {
@@ -99,18 +106,18 @@ inline double core_radius(const ThreeFluidSim &sim) {
 }
 
 
-inline double three_body_rate_density(const ThreeFluidSim &sim, const int zone) {
-  const double reference_coulomb_log = sim.options.reference_coulomb_log;
+inline double three_body_rate_density(const ThreeFluidSim &sim, const int zone,
+                                     const double reference_coulomb_log) {
   constexpr double code_mass_unit = 4.0 * std::numbers::pi;
-  return 0.0009373511756007407 * (sim.ms * code_mass_unit)
+  return 0.0009373511756007407 * (sim.param.ms * code_mass_unit)
     * std::pow(sim.Rho[FS][zone], 3)
     / (reference_coulomb_log * std::pow(sim.U[FS][zone], 4.5));
 }
 
-inline Rates evaluate_rates(const ThreeFluidSim &sim) {
+inline Rates evaluate_rates(const ThreeFluidSim &sim, double reference_coulomb_log) {
   Rates rates;
-  const double capture_coefficient = sim.options.capture_coefficient;
-  for (int zone = 0; zone < sim.N; ++zone) {
+  const double capture_coefficient = sim.param.capture_coefficient;
+  for (int zone = 0; zone < sim.param.N; ++zone) {
     const double volume = shell_volume(sim, FS, zone);
     const double capture_number_density_rate = capture_coefficient
       * std::pow(sim.Rho[FS][zone], 2)
@@ -118,22 +125,22 @@ inline Rates evaluate_rates(const ThreeFluidSim &sim) {
     rates.capture_number_per_hydro_time +=
       capture_number_density_rate * volume;
     rates.three_body_number_per_hydro_time +=
-      three_body_rate_density(sim, zone) * volume;
+      three_body_rate_density(sim, zone, reference_coulomb_log) * volume;
 
     // A captured binary is inserted with U_b=U_s/2, so the resolved
     // translational random energy loses half of the transferred mass times U_s.
-    rates.capture_energy_per_hydro_time -= 0.5 * sim.mb
+    rates.capture_energy_per_hydro_time -= 0.5 * sim.param.mb
       * capture_number_density_rate * sim.U[FS][zone] * volume;
 
     const double rho_s = sim.Rho[FS][zone];
     const double rho_b = sim.Rho[FB][zone];
     const double root_u_s = std::sqrt(sim.U[FS][zone]);
     const double root_u_b = std::sqrt(sim.U[FB][zone]);
-    rates.direct_single_from_binary_single += rho_s * sim.c4[FS][FB]
+    rates.direct_single_from_binary_single += rho_s * sim.param.c4[(FS)*NF+(FB)]
       * rho_b / root_u_s * volume;
-    rates.direct_binary_from_binary_single += rho_b * sim.c4[FB][FS]
+    rates.direct_binary_from_binary_single += rho_b * sim.param.c4[(FB)*NF+(FS)]
       * rho_s / root_u_s * volume;
-    rates.direct_binary_from_binary_binary += rho_b * sim.c4[FB][FB]
+    rates.direct_binary_from_binary_binary += rho_b * sim.param.c4[(FB)*NF+(FB)]
       * rho_b / root_u_b * volume;
   }
   return rates;
@@ -159,11 +166,12 @@ struct History {
   std::vector<double> energy;
 
   void record(const ThreeFluidSim &sim, const double hydro_time_per_trh,
-              const double hydro_time_myr, const double binary_age_moment_trh) {
+              const double hydro_time_myr, const double binary_age_moment_trh,
+              const double reference_coulomb_log) {
     const double current_time_trh = sim.totalTime * hydro_time_per_trh;
     const double rho0 = sim.Rho[FS][0] + sim.Rho[FB][0] + sim.Rho[FD][0];
-    const double n_binary = sim.Menc[FB][sim.N - 1] / sim.mb;
-    const Rates rates = evaluate_rates(sim);
+    const double n_binary = sim.Menc[FB][sim.param.N - 1] / sim.param.mb;
+    const Rates rates = evaluate_rates(sim, reference_coulomb_log);
     const double energy_rate_conversion = 9.0 / hydro_time_per_trh;
 
     time_trh.push_back(current_time_trh);
@@ -233,14 +241,14 @@ inline Snapshot make_snapshot(const ThreeFluidSim &sim, const double time_trh,
                        const double hydro_time_per_trh) {
   Snapshot snapshot;
   snapshot.time_trh = time_trh;
-  snapshot.radius.resize(sim.N);
-  snapshot.rho_single.resize(sim.N);
-  snapshot.rho_binary.resize(sim.N);
-  snapshot.u_single.resize(sim.N);
-  snapshot.u_binary.resize(sim.N);
-  snapshot.luminosity.assign(sim.N, 0.0);
+  snapshot.radius.resize(sim.param.N);
+  snapshot.rho_single.resize(sim.param.N);
+  snapshot.rho_binary.resize(sim.param.N);
+  snapshot.u_single.resize(sim.param.N);
+  snapshot.u_binary.resize(sim.param.N);
+  snapshot.luminosity.assign(sim.param.N, 0.0);
   const double luminosity_conversion = 9.0 / hydro_time_per_trh;
-  for (int zone = 0; zone < sim.N; ++zone) {
+  for (int zone = 0; zone < sim.param.N; ++zone) {
     snapshot.radius[zone] = sim.R[FS][zone];
     snapshot.rho_single[zone] = sim.Rho[FS][zone];
     snapshot.rho_binary[zone] = sim.Rho[FB][zone];
@@ -250,7 +258,7 @@ inline Snapshot make_snapshot(const ThreeFluidSim &sim, const double time_trh,
       continue;
     }
     for (int fluid = 0; fluid < NF; ++fluid) {
-      snapshot.luminosity[zone] -= sim.c2[fluid] * sim.Rho[fluid][zone]
+      snapshot.luminosity[zone] -= sim.param.c2[fluid] * sim.Rho[fluid][zone]
         * std::pow(sim.R[fluid][zone], 2)
         * (std::sqrt(sim.U[fluid][zone])
            - std::sqrt(sim.U[fluid][zone - 1]))
@@ -328,26 +336,26 @@ struct SnapshotStore {
 struct StatlerObserver {
   statler_diagnostics::History history;
   statler_diagnostics::SnapshotStore snapshots;
-  ThreeFluidParam config;
+  StatlerObserverParam param;
+  int zones = 0;
   double age_moment_hydro = 0;
   double previous_time = 0, previous_number = 0, previous_formed = 0;
   bool initialized = false;
-  explicit StatlerObserver(const ThreeFluidParam& p):config(p) {
-    if(!p.statler_observer || p.history_stride<1 || p.output_format!=1 ||
-       p.snapshot_count<0 || p.snapshot_count>16 ||
+  explicit StatlerObserver(const StatlerObserverParam& p):param(p) {
+    if(!std::isfinite(p.reference_coulomb_log) || p.reference_coulomb_log<=0 ||
        !std::isfinite(p.time_unit_myr) || p.time_unit_myr<=0 ||
        !std::isfinite(p.time_unit_over_trh) || p.time_unit_over_trh<=0)
       throw std::invalid_argument("invalid Statler observer configuration");
     snapshots.targets.assign(p.snapshot_times_trh.begin(),
-                              p.snapshot_times_trh.begin()+p.snapshot_count);
+                              p.snapshot_times_trh.end());
     for(double t:snapshots.targets)
       if(!std::isfinite(t)||t<0) throw std::invalid_argument("invalid snapshot time");
     if(!std::is_sorted(snapshots.targets.begin(),snapshots.targets.end()))
       throw std::invalid_argument("unordered snapshot targets");
-    snapshots.save_peak=p.save_peak_snapshot!=0;
   }
   void operator()(const ThreeFluidSim& sim) {
-    const double number=sim.Menc[FB][sim.N-1]/sim.mb;
+    zones=sim.param.N;
+    const double number=sim.Menc[FB][sim.param.N-1]/sim.param.mb;
     if(initialized) {
       const double dt=sim.totalTime-previous_time;
       const double formed=sim.cumulative_formed_binaries-previous_formed;
@@ -357,15 +365,14 @@ struct StatlerObserver {
     }
     previous_time=sim.totalTime;previous_number=number;
     previous_formed=sim.cumulative_formed_binaries;initialized=true;
-    if(sim.step%config.history_stride==0 || sim.stopCondition())
-      history.record(sim,config.time_unit_over_trh,config.time_unit_myr,
-                     age_moment_hydro*config.time_unit_over_trh);
-    snapshots.observe(sim,config.time_unit_over_trh);
+    history.record(sim,param.time_unit_over_trh,param.time_unit_myr,
+                   age_moment_hydro*param.time_unit_over_trh,param.reference_coulomb_log);
+    snapshots.observe(sim,param.time_unit_over_trh);
   }
   void save(const std::string& directory) const {
     history.save(directory);
-    snapshots.save(directory,static_cast<int>(config.N));
-    write_to_file(std::vector<double>{config.time_unit_myr},directory+"hydro_time_myr.dat");
-    write_to_file(std::vector<double>{config.time_unit_over_trh},directory+"hydro_time_per_trh.dat");
+    snapshots.save(directory,zones);
+    write_to_file(std::vector<double>{param.time_unit_myr},directory+"hydro_time_myr.dat");
+    write_to_file(std::vector<double>{param.time_unit_over_trh},directory+"hydro_time_per_trh.dat");
   }
 };
