@@ -124,6 +124,7 @@ class StatlerPlotTest(unittest.TestCase):
                 for number in MODULE.OVERLAY_FRAMES:
                     figure = MODULE.make_page(document, number, run, run, overlay=True)
                     try:
+                        figure.canvas.draw()
                         self.assertEqual(len(figure.axes), len(MODULE.PANEL_AXES[number]))
                         if number == 13:
                             pixels = figure.axes[0].images[0].get_array()
@@ -132,6 +133,10 @@ class StatlerPlotTest(unittest.TestCase):
                             np.testing.assert_array_equal(pixels[h // 2, 3 * w // 4], [255, 0, 0])
                         for axis, spec in zip(figure.axes, MODULE.PANEL_AXES[number], strict=True):
                             self.assertEqual(len(axis.images), 1)
+                            height, width = axis.images[0].get_array().shape[:2]
+                            box = axis.get_window_extent()
+                            self.assertAlmostEqual(box.height / box.width, height / width,
+                                                   places=12)
                             np.testing.assert_allclose(axis.get_xlim(), spec.xlim)
                             np.testing.assert_allclose(axis.get_ylim(), spec.ylim)
                             np.testing.assert_allclose(

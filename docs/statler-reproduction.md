@@ -179,7 +179,9 @@ signed conductive luminosity and fractional heating, which remain linear.
 
 The same command also writes `comparison_overlays.pdf`, with five additional
 pages for Figs. 11--15. Colored HydroSim curves are overlaid on gray scanned
-plot interiors. Registration uses the printed axis frames, including the
+plot interiors. Each overlay preserves the rotated scan's height-to-width
+ratio; unused page space is left blank rather than stretching the plot.
+Registration uses the printed axis frames, including the
 reversed precollapse time axis; it does not digitize, fit, or shift the
 Statler curves to match HydroSim. These overlays are visual comparisons,
 not reference arrays suitable for residual or error calculations. Internal
