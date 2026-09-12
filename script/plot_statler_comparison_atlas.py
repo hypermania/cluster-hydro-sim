@@ -215,6 +215,9 @@ def overlay_reference(axis: plt.Axes, document: fitz.Document,
     # would incorrectly warp the raster on logarithmic axes.
     axis.imshow(image, extent=(0, 1, 0, 1), transform=axis.transAxes,
                 origin="upper", aspect="auto", alpha=0.55, zorder=0)
+    # Fix the physical axes rectangle, not the data-unit aspect (which would
+    # be incorrect for unequal logarithmic ranges). Account for scan rotation.
+    axis.set_box_aspect(image.shape[0] / image.shape[1])
 
 
 def reference_images(document: fitz.Document, figure_number: int) -> list[np.ndarray]:
