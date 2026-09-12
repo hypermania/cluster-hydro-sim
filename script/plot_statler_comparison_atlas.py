@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+from textwrap import fill
 
 import fitz
 import matplotlib
@@ -112,7 +113,9 @@ REFERENCE_CROPS: dict[int, list[tuple[int, float, float, float, float, int]]] = 
     1: [(11, 0.02, 0.00, 0.80, 1.00, 0)],
     2: [(12, 0.46, 0.00, 1.00, 0.49, 0)],
     3: [(12, 0.46, 0.46, 1.00, 1.00, 0)],
-    4: [(13, 0.06, 0.00, 0.94, 1.00, 0), (14, 0.00, 0.00, 0.60, 0.58, 0)],
+    4: [(13, 0.16, 0.055, 0.77, 0.445, 0),
+        (14, 0.17, 0.095, 0.79, 0.47, 0),
+        (13, 0.16, 0.475, 0.77, 0.845, 0)],
     5: [(15, 0.03, 0.04, 0.95, 0.95, 3)],
     6: [(16, 0.00, 0.00, 0.58, 0.62, 0)],
     7: [(17, 0.04, 0.05, 0.95, 0.94, 3)],
@@ -120,19 +123,98 @@ REFERENCE_CROPS: dict[int, list[tuple[int, float, float, float, float, int]]] = 
     9: [(19, 0.00, 0.00, 0.72, 0.57, 0)],
     10: [(19, 0.00, 0.48, 0.72, 1.00, 0)],
     11: [(20, 0.00, 0.00, 0.74, 1.00, 0)],
-    12: [(21, 0.00, 0.00, 0.66, 1.00, 0)],
+    12: [(21, 0.25, 0.08, 0.74, 0.75, 0)],
     13: [(22, 0.03, 0.04, 0.94, 0.94, 3)],
     14: [(23, 0.00, 0.00, 0.69, 1.00, 0)],
     15: [(24, 0.00, 0.00, 0.69, 1.00, 0)],
     16: [(25, 0.00, 0.00, 0.74, 1.00, 0)],
-    17: [(26, 0.00, 0.00, 0.61, 1.00, 0)],
+    17: [(26, 0.05, 0.09, 0.94, 0.36, 0), (26, 0.05, 0.38, 0.49, 0.65, 0)],
     18: [(26, 0.49, 0.43, 1.00, 1.00, 0)],
-    19: [(27, 0.03, 0.04, 0.95, 0.95, 3)],
+    19: [(27, 0.18, 0.04, 0.79, 0.86, 0)],
     20: [(28, 0.03, 0.04, 0.95, 0.95, 3)],
     21: [(29, 0.03, 0.04, 0.95, 0.95, 3)],
     22: [(30, 0.00, 0.00, 0.69, 1.00, 0)],
     23: [(31, 0.00, 0.00, 0.74, 0.58, 0)],
 }
+
+
+# Limits read from the *frames*, not just the outermost labelled ticks.
+# Logs of dimensional quantities printed in the paper are represented with
+# log-scaled positive quantities here. Each pair of panels uses identical limits.
+@dataclass(frozen=True)
+class PanelAxes:
+    xlim: tuple[float, float]
+    ylim: tuple[float, float]
+    xscale: str = "log"
+    yscale: str = "log"
+
+
+GLOBAL_AXES = [PanelAxes((1, 1e4), y) for y in [(1e-1, 1e4), (1e-3, 10), (1e-3, 100)]]
+COUNT_AXES = PanelAxes((1, 1e4), (1, 1e4))
+RATIO_AXES = PanelAxes((1, 1e4), (1e-3, 100))
+AGE_AXES = PanelAxes((1, 1e4), (1e-1, 100))
+HEATING_AXES = [PanelAxes(x, (1e-9, 1e-1)) for x in [(20, 1e-2), (1e-2, 1e4)]]
+DENSITY_AXES = PanelAxes((1e-7, 1e5), (1e-25, 1e10))
+VELOCITY_AXES = PanelAxes((1e-7, 1e5), (1e-5, 10))
+PANEL_AXES = {
+    1: GLOBAL_AXES, 2: [COUNT_AXES], 3: [RATIO_AXES],
+    4: [PanelAxes((20, 1e-2), (1e-12, 1)),
+        PanelAxes((1e-2, 1e4), (1e-12, 1)),
+        PanelAxes((1e-2, 1e4), (1e-3, 10))],
+    5: HEATING_AXES, 6: [AGE_AXES], 7: [DENSITY_AXES] * 4,
+    8: [VELOCITY_AXES, VELOCITY_AXES,
+        PanelAxes((1e-7, 1e5), (1e-3, 10)), VELOCITY_AXES],
+    9: [PanelAxes((-7, 5), (-2e-3, 0.65e-3), "linear", "linear")],
+    10: [PanelAxes((1e-2, 1e4), (1e-2, 1))],
+    11: GLOBAL_AXES, 12: [COUNT_AXES, RATIO_AXES], 13: HEATING_AXES,
+    14: [DENSITY_AXES] * 2, 15: [VELOCITY_AXES] * 2,
+    16: GLOBAL_AXES, 17: [COUNT_AXES, RATIO_AXES, AGE_AXES],
+    18: [PanelAxes((1, 1e4), (1e-15, 1))], 19: HEATING_AXES,
+    20: [PanelAxes(x, (-1.1, 1.1), yscale="linear")
+         for x in [(20, 1e-2), (1e-2, 1e4)]],
+    21: [DENSITY_AXES] * 2, 22: [VELOCITY_AXES] * 2, 23: [DENSITY_AXES],
+}
+
+# (PDF page, frame rectangle in PDF points, quarter-turns CCW).
+# Calibrated against the 612 x 792 point ADS scan, excluding tick labels.
+# These are raster registrations, not digitized or fitted reference curves.
+OVERLAY_FRAMES = {
+    11: [(20, (63, 73, 266, 236), 0), (20, (67, 300, 270, 464), 0),
+         (20, (63, 531, 265, 695), 0)],
+    12: [(21, (199, 95, 412, 268), 0), (21, (199, 375, 414, 552), 0)],
+    13: [(22, (170, 403, 391, 678), 3), (22, (169, 66, 390, 342), 3)],
+    14: [(23, (175, 94, 415, 290), 0), (23, (176, 363, 417, 559), 0)],
+    15: [(24, (178, 95, 421, 292), 0), (24, (179, 370, 422, 567), 0)],
+}
+
+# Paper primary rate unit: initial N_star / initial half-mass relaxation time.
+STATLER_RATE_PER_YEAR = 3e5 / 225e6
+
+
+def apply_panel_axes(axes: list[plt.Axes], figure_number: int) -> None:
+    for axis, spec in zip(axes, PANEL_AXES[figure_number], strict=True):
+        axis.set_xscale(spec.xscale)
+        axis.set_yscale(spec.yscale)
+        axis.set_xlim(spec.xlim)
+        axis.set_ylim(spec.ylim)
+
+
+def overlay_reference(axis: plt.Axes, document: fitz.Document,
+                      frame: tuple) -> None:
+    page_number, rectangle, turns = frame
+    page = document.load_page(page_number - 1)
+    # Scale the calibration if the same scan has been uniformly resized.
+    rect = fitz.Rect(*(v * (page.rect.width / 612 if i % 2 == 0 else page.rect.height / 792)
+                       for i, v in enumerate(rectangle)))
+    pixmap = page.get_pixmap(matrix=fitz.Matrix(3, 3), clip=rect, alpha=False)
+    image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+        pixmap.height, pixmap.width, pixmap.n)[..., :3]
+    image = np.rot90(image, turns)
+    # Axes coordinates preserve linear pixel spacing in log10(x), log10(y),
+    # including the reversed precollapse x axis. A data-space imshow extent
+    # would incorrectly warp the raster on logarithmic axes.
+    axis.imshow(image, extent=(0, 1, 0, 1), transform=axis.transAxes,
+                origin="upper", aspect="auto", alpha=0.55, zorder=0)
 
 
 def reference_images(document: fitz.Document, figure_number: int) -> list[np.ndarray]:
@@ -196,7 +278,9 @@ def plot_evolution(axes: list[plt.Axes], data: RunData) -> None:
 
 def plot_binary_number(axis: plt.Axes, data: RunData) -> None:
     mask = _history_mask(data)
-    axis.semilogx(data.history["time"][mask], data.history["nb"][mask], color="#1f77b4")
+    # No primordial binaries: zero counts cannot be displayed on a log axis.
+    mask &= data.history["nb"] > 0.0
+    axis.loglog(data.history["time"][mask], data.history["nb"][mask], color="#1f77b4")
     axis.set_xlim(1.0, 1.0e4)
     _base_axis(axis, r"$t/t_{rh}$", r"$N_b$")
 
@@ -223,11 +307,11 @@ def plot_interaction_rates(axes: list[plt.Axes], data: RunData) -> None:
     h = data.history
     for axis, before in zip(axes[:2], [True, False], strict=True):
         mask, separation = _phase(data, before)
-        axis.loglog(separation[mask], h["capture_rate"][mask], label="tidal capture")
-        axis.loglog(separation[mask], h["threebody_rate"][mask], linestyle="--", label="3-body")
+        axis.loglog(separation[mask], h["capture_rate"][mask] / STATLER_RATE_PER_YEAR, label="tidal capture")
+        axis.loglog(separation[mask], h["threebody_rate"][mask] / STATLER_RATE_PER_YEAR, linestyle="--", label="3-body")
         axis.invert_xaxis() if before else None
         axis.legend(frameon=False)
-        _base_axis(axis, r"$|t-t_c|/t_{rh}$", r"rate (yr$^{-1}$)")
+        _base_axis(axis, r"$|t-t_c|/t_{rh}$", r"rate ($N_*/t_{rh}$)")
     mask, separation = _phase(data, False)
     if np.count_nonzero(mask) > 3:
         time_year = h["time"] * 225.0e6
@@ -285,10 +369,11 @@ def _profile_indices(data: RunData, postcollapse: bool, count: int = 4) -> np.nd
 
 def _plot_profiles(axis: plt.Axes, data: RunData, quantity: str,
                    component: str, postcollapse: bool) -> None:
+    ylabel = r"$\rho/(M/r_0^3)$" if quantity.startswith("density") else r"$v_m^2/(GM/r_0)$"
     indices = _profile_indices(data, postcollapse)
     if not indices.size:
         axis.text(0.5, 0.5, "No postcollapse state", ha="center", va="center", transform=axis.transAxes)
-        _base_axis(axis, r"$r/r_0$", quantity)
+        _base_axis(axis, r"$r/r_0$", ylabel)
         return
     colors = plt.colormaps["turbo"](np.linspace(0.05, 0.92, indices.size))
     for color, index in zip(colors, indices, strict=True):
@@ -299,13 +384,12 @@ def _plot_profiles(axis: plt.Axes, data: RunData, quantity: str,
             values = 6.0 * data.snapshots[f"u_{component}"][index]
         axis.loglog(radius, values, color=color, label=rf"$t/t_{{rh}}={data.snapshot_time[index]:.2g}$")
     axis.legend(frameon=False, ncol=2)
-    ylabel = r"$\rho/(M/r_0^3)$" if quantity.startswith("density") else r"$v_m^2/(GM/r_0)$"
     _base_axis(axis, r"$r/r_0$", ylabel)
     axis.set_xlim(1.0e-6, 1.0e4)
 
 
 def plot_four_profiles(axes: list[plt.Axes], data: RunData, quantity: str) -> None:
-    combinations = [("s", False), ("b", False), ("s", True), ("b", True)]
+    combinations = [("s", False), ("s", True), ("b", False), ("b", True)]
     for axis, (component, postcollapse) in zip(axes, combinations, strict=True):
         _plot_profiles(axis, data, quantity, component, postcollapse)
         axis.set_title(("postcollapse " if postcollapse else "precollapse ") + ("singles" if component == "s" else "binaries"))
@@ -426,83 +510,79 @@ def _source_panel(figure: plt.Figure, source_spec, images: list[np.ndarray]) -> 
 
 
 def make_page(document: fitz.Document, figure_number: int,
-              control: RunData, direct: RunData) -> plt.Figure:
-    figure = plt.figure(figsize=(11.69, 8.27))
-    outer = figure.add_gridspec(1, 2, left=0.035, right=0.98, top=0.90, bottom=0.105,
-                                width_ratios=[1.0, 1.08], wspace=0.12)
-    _source_panel(figure, outer[0], reference_images(document, figure_number))
+              control: RunData, direct: RunData, *, overlay: bool = False) -> plt.Figure:
+    if overlay and figure_number not in OVERLAY_FRAMES:
+        raise ValueError("reference overlays are calibrated for Figures 11--15 only")
+    figure = plt.figure(figsize=(8.27, 11.69) if overlay else (11.69, 8.27))
+    outer = figure.add_gridspec(1, 1 if overlay else 2,
+                                left=0.09 if overlay else 0.035, right=0.96,
+                                top=0.88, bottom=0.15 if overlay else 0.105,
+                                wspace=0.22)
+    if not overlay:
+        _source_panel(figure, outer[0], reference_images(document, figure_number))
+    right = outer[-1]
     data = control if figure_number <= 10 else direct
     note = EJECTION_NOTE if figure_number <= 10 else (DIRECT_NOTE if figure_number <= 15 else FULL_NOTE)
 
     if figure_number in {1, 11, 16}:
-        axes = _make_right_axes(figure, outer[1], 3); plot_evolution(axes, data)
+        axes = _make_right_axes(figure, right, 3); plot_evolution(axes, data)
     elif figure_number in {2}:
-        axes = _make_right_axes(figure, outer[1], 1); plot_binary_number(axes[0], data)
+        axes = _make_right_axes(figure, right, 1); plot_binary_number(axes[0], data)
     elif figure_number in {3}:
-        axes = _make_right_axes(figure, outer[1], 1); plot_ratio(axes[0], data)
+        axes = _make_right_axes(figure, right, 1); plot_ratio(axes[0], data)
     elif figure_number == 4:
-        axes = _make_right_axes(figure, outer[1], 3); plot_interaction_rates(axes, data)
+        axes = _make_right_axes(figure, right, 3); plot_interaction_rates(axes, data)
     elif figure_number in {5, 13, 19}:
-        axes = _make_right_axes(figure, outer[1], 2); plot_heating(axes, data)
+        axes = _make_right_axes(figure, right, 2); plot_heating(axes, data)
     elif figure_number == 6:
-        axes = _make_right_axes(figure, outer[1], 1); plot_age(axes[0], data)
+        axes = _make_right_axes(figure, right, 1); plot_age(axes[0], data)
     elif figure_number == 7:
-        axes = _make_right_axes(figure, outer[1], 4); plot_four_profiles(axes, data, "density")
+        axes = _make_right_axes(figure, right, 4); plot_four_profiles(axes, data, "density")
     elif figure_number == 8:
-        axes = _make_right_axes(figure, outer[1], 4); plot_four_profiles(axes, data, "velocity")
+        axes = _make_right_axes(figure, right, 4); plot_four_profiles(axes, data, "velocity")
     elif figure_number == 9:
-        axes = _make_right_axes(figure, outer[1], 1); plot_luminosity(axes[0], data)
+        axes = _make_right_axes(figure, right, 1); plot_luminosity(axes[0], data)
     elif figure_number == 10:
-        axes = _make_right_axes(figure, outer[1], 1); plot_mass_slope(axes[0], data)
+        axes = _make_right_axes(figure, right, 1); plot_mass_slope(axes[0], data)
     elif figure_number in {12}:
-        axes = _make_right_axes(figure, outer[1], 2)
+        axes = _make_right_axes(figure, right, 2)
         plot_binary_number(axes[0], data); plot_ratio(axes[1], data)
     elif figure_number in {14, 21}:
-        axes = _make_right_axes(figure, outer[1], 2); plot_two_profiles(axes, data, "density")
+        axes = _make_right_axes(figure, right, 2); plot_two_profiles(axes, data, "density")
     elif figure_number in {15, 22}:
-        axes = _make_right_axes(figure, outer[1], 2); plot_two_profiles(axes, data, "velocity")
+        axes = _make_right_axes(figure, right, 2); plot_two_profiles(axes, data, "velocity")
     elif figure_number == 17:
-        axes = _make_right_axes(figure, outer[1], 3)
+        axes = _make_right_axes(figure, right, 3)
         plot_binary_number(axes[0], data); plot_ratio(axes[1], data); plot_age(axes[2], data)
     elif figure_number == 18:
-        axes = _make_right_axes(figure, outer[1], 1)
+        axes = _make_right_axes(figure, right, 1)
         mask = _history_mask(data)
-        axes[0].loglog(data.history["time"][mask], 2.0 * data.history["capture_rate"][mask], label="singles consumed by capture")
-        axes[0].loglog(data.history["time"][mask], data.history["threebody_rate"][mask], linestyle="--", label="3-body binary events")
-        axes[0].legend(frameon=False); _base_axis(axes[0], r"$t/t_{rh}$", r"rate (yr$^{-1}$)")
+        axes[0].loglog(data.history["time"][mask], 2.0 * data.history["capture_rate"][mask] / STATLER_RATE_PER_YEAR, label="singles consumed by capture")
+        axes[0].loglog(data.history["time"][mask], data.history["threebody_rate"][mask] / STATLER_RATE_PER_YEAR, linestyle="--", label="3-body binary events")
+        axes[0].legend(frameon=False); _base_axis(axes[0], r"$t/t_{rh}$", r"rate ($N_*/t_{rh}$)")
     elif figure_number == 20:
-        axes = _make_right_axes(figure, outer[1], 2); plot_fractional_heating(axes, data)
+        axes = _make_right_axes(figure, right, 2); plot_fractional_heating(axes, data)
     elif figure_number == 23:
-        axes = _make_right_axes(figure, outer[1], 1); plot_projected(axes[0], data)
+        axes = _make_right_axes(figure, right, 1); plot_projected(axes[0], data)
     else:
         raise AssertionError(f"unhandled figure {figure_number}")
 
-    # Keep the principal observables on the published plotting ranges. Values
-    # leaving a frame are then a physical mismatch, not an autoscaling artifact.
-    if figure_number in {1, 11, 16}:
-        axes[0].set_ylim(1.0e-1, 1.0e4)
-        axes[1].set_ylim(1.0e-3, 1.0e1)
-        axes[2].set_ylim(1.0e-3, 1.0e2)
-    if figure_number in {2}:
-        axes[0].set_ylim(0.0, 1800.0)
-    if figure_number in {3}:
-        axes[0].set_ylim(1.0e-3, 1.0e1)
-    if figure_number == 12:
-        axes[0].set_ylim(0.0, 3200.0)
-        axes[1].set_ylim(1.0e-3, 1.0e2)
-    if figure_number == 17:
-        axes[0].set_ylim(0.0, 1800.0)
-        axes[1].set_ylim(1.0e-3, 1.0e1)
-        axes[2].set_ylim(1.0e-1, 1.0e2)
-    if figure_number in {7, 14, 21}:
-        for axis in axes:
-            axis.set_ylim(1.0e-25, 1.0e10)
-    if figure_number in {8, 15, 22}:
-        for axis in axes:
-            axis.set_ylim(1.0e-4, 1.0e1)
+    apply_panel_axes(axes, figure_number)
+    if overlay:
+        for axis, frame in zip(axes, OVERLAY_FRAMES[figure_number], strict=True):
+            overlay_reference(axis, document, frame)
+        # imshow may change limits even with an axes transform: restore the
+        # same explicit contract used for the side-by-side plots.
+        apply_panel_axes(axes, figure_number)
+        figure.text(0.09, 0.925, "Colored curves: HydroSim    |    Gray scan: Statler et al. (1987)", fontsize=10)
+        figure.text(0.09, 0.085,
+                    "Scan-registered overlay, not digitized data; reference annotations remain gray.\n"
+                    "Profiles show available saved HydroSim epochs (legend), not matched reference epochs.",
+                    fontsize=8)
 
-    figure.suptitle(f"Statler et al. Figure {figure_number}: {FIGURE_TITLES[figure_number]}", fontsize=13, y=0.965)
-    figure.text(0.035, 0.035, note, ha="left", va="bottom", fontsize=8.2, wrap=True)
+    figure.suptitle(f"Statler et al. Figure {figure_number}: {FIGURE_TITLES[figure_number]}", fontsize=12 if overlay else 13, y=0.965)
+    figure.text(0.035, 0.035, fill(note, 112 if overlay else 165),
+                ha="left", va="bottom", fontsize=8.2)
     figure.text(0.98, 0.018, "HydroSim comparison atlas", ha="right", va="bottom", fontsize=7, color="0.35")
     return figure
 
@@ -516,6 +596,12 @@ def build_atlas(reference_pdf: Path, control: RunData, direct: RunData,
         with PdfPages(output) as pdf:
             for figure_number in range(1, 24):
                 figure = make_page(document, figure_number, control, direct)
+                pdf.savefig(figure)
+                plt.close(figure)
+        overlay_output = output.with_name(output.stem + "_overlays.pdf")
+        with PdfPages(overlay_output) as pdf:
+            for figure_number in OVERLAY_FRAMES:
+                figure = make_page(document, figure_number, control, direct, overlay=True)
                 pdf.savefig(figure)
                 plt.close(figure)
     finally:
@@ -538,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
     output = arguments.output.expanduser().resolve()
     build_atlas(arguments.reference_pdf.expanduser().resolve(), control, direct, output)
     print(f"Wrote {output}")
+    print(f"Wrote {output.with_name(output.stem + '_overlays.pdf')}")
     return 0
 
 
