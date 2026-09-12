@@ -54,6 +54,97 @@ def main() -> int:
 
 
 class StatlerPlotTest(unittest.TestCase):
+    def test_all_panels_have_published_scales_and_limits(self):
+        self.assertEqual(set(MODULE.PANEL_AXES), set(range(1, 24)))
+        for number, specs in MODULE.PANEL_AXES.items():
+            with self.subTest(figure=number):
+                figure, axes = MODULE.plt.subplots(len(specs), 1, squeeze=False)
+                try:
+                    panels = list(axes[:, 0])
+                    MODULE.apply_panel_axes(panels, number)
+                    for axis, spec in zip(panels, specs, strict=True):
+                        self.assertEqual(axis.get_xscale(), spec.xscale)
+                        self.assertEqual(axis.get_yscale(), spec.yscale)
+                        np.testing.assert_allclose(axis.get_xlim(), spec.xlim)
+                        np.testing.assert_allclose(axis.get_ylim(), spec.ylim)
+                finally:
+                    MODULE.plt.close(figure)
+        self.assertEqual(MODULE.PANEL_AXES[2][0].ylim, (1, 1e4))
+        self.assertEqual(MODULE.PANEL_AXES[12][0].yscale, "log")
+        self.assertEqual(MODULE.PANEL_AXES[14][0].xlim, (1e-7, 1e5))
+        self.assertEqual(MODULE.PANEL_AXES[13][0].xlim, (20, 1e-2))
+
+    def test_binary_count_masks_zero_on_log_axis(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            write_synthetic_run(directory)
+            run = MODULE.load_run(directory)
+            run.history["nb"][1] = 0
+            figure, axis = MODULE.plt.subplots()
+            try:
+                MODULE.plot_binary_number(axis, run)
+                self.assertEqual(axis.get_yscale(), "log")
+                np.testing.assert_array_equal(axis.lines[0].get_xdata(), [2])
+            finally:
+                MODULE.plt.close(figure)
+
+    def test_rates_use_paper_primary_unit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            write_synthetic_run(directory)
+            run = MODULE.load_run(directory)
+            figure, axes = MODULE.plt.subplots(3, 1)
+            try:
+                MODULE.plot_interaction_rates(list(axes), run)
+                np.testing.assert_allclose(axes[0].lines[0].get_ydata(),
+                                           run.history["capture_rate"][1:2] * 225e6 / 3e5)
+            finally:
+                MODULE.plt.close(figure)
+
+    def test_atlas_and_registered_overlays(self):
+        # No copyrighted PDF or simulation output is required by this test.
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            write_synthetic_run(directory)
+            run = MODULE.load_run(directory)
+            reference = directory / "reference.pdf"
+            with MODULE.fitz.open() as document:
+                for _ in range(31):
+                    document.new_page(width=612, height=792)
+                # After clockwise rotation, the original bottom (blue) half
+                # of Fig. 13a must be on the left, and the red half on the right.
+                page_number, box, _ = MODULE.OVERLAY_FRAMES[13][0]
+                left, top, right, bottom = box
+                middle = (top + bottom) / 2
+                page = document[page_number - 1]
+                page.draw_rect((left, top, right, middle), color=None, fill=(1, 0, 0))
+                page.draw_rect((left, middle, right, bottom), color=None, fill=(0, 0, 1))
+                document.save(reference)
+            with MODULE.fitz.open(reference) as document:
+                for number in MODULE.OVERLAY_FRAMES:
+                    figure = MODULE.make_page(document, number, run, run, overlay=True)
+                    try:
+                        self.assertEqual(len(figure.axes), len(MODULE.PANEL_AXES[number]))
+                        if number == 13:
+                            pixels = figure.axes[0].images[0].get_array()
+                            h, w = pixels.shape[:2]
+                            np.testing.assert_array_equal(pixels[h // 2, w // 4], [0, 0, 255])
+                            np.testing.assert_array_equal(pixels[h // 2, 3 * w // 4], [255, 0, 0])
+                        for axis, spec in zip(figure.axes, MODULE.PANEL_AXES[number], strict=True):
+                            self.assertEqual(len(axis.images), 1)
+                            np.testing.assert_allclose(axis.get_xlim(), spec.xlim)
+                            np.testing.assert_allclose(axis.get_ylim(), spec.ylim)
+                            np.testing.assert_allclose(
+                                axis.images[0].get_transform().transform([[0, 0], [1, 1]]),
+                                axis.transAxes.transform([[0, 0], [1, 1]]))
+                    finally:
+                        MODULE.plt.close(figure)
+            output = directory / "atlas.pdf"
+            MODULE.build_atlas(reference, run, run, output)
+            for path, pages in [(output, 23), (directory / "atlas_overlays.pdf", 5)]:
+                with MODULE.fitz.open(path) as document:
+                    self.assertEqual(len(document), pages)
+
     def test_overshooting_time_is_not_clipped_to_paper_viewport(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

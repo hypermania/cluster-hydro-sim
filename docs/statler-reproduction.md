@@ -167,6 +167,34 @@ The Python analysis uses NumPy, Matplotlib and PyMuPDF. The generated atlas
 contains one page per numbered figure (23 figures). It does not imply that
 the fluid closure reproduces every plotted physical quantity.
 
+Every HydroSim panel uses the corresponding paper panel's horizontal and
+vertical frame bounds, in the same units. Binary counts (including Figs. 2
+and 12) use logarithmic vertical axes; zero counts are omitted, not replaced
+by a positive floor. Density profiles span `r/r0 = 1e-7 .. 1e5`, including
+the unlabelled frame edges beyond the outer labelled ticks. Rates in Figs. 4
+and 18 are displayed in the paper's primary unit `N_star/t_rh`, using
+`N_star=300000` and `t_rh=225 Myr`. Logarithms printed as coordinates in the
+paper are displayed as positive quantities on logarithmic axes, except the
+signed conductive luminosity and fractional heating, which remain linear.
+
+The same command also writes `comparison_overlays.pdf`, with five additional
+pages for Figs. 11--15. Colored HydroSim curves are overlaid on gray scanned
+plot interiors. Registration uses the printed axis frames, including the
+reversed precollapse time axis; it does not digitize, fit, or shift the
+Statler curves to match HydroSim. These overlays are visual comparisons,
+not reference arrays suitable for residual or error calculations. Internal
+annotations from the scan remain visible in gray. Profiles retain the saved
+HydroSim epochs shown in their legends; they are not interpolated to the
+reference profile epochs.
+
+The crop calibration targets the 34-page ADS scan of Statler, Ostriker and
+Cohn, *ApJ* **316**, 626--659 (1987), with 612-by-792-point pages
+(SHA-256 `970689120e81893ef8cedca09438b64ebcbc7fc896868b6dd4e36949c1db43d2`).
+A differently cropped or deskewed PDF needs recalibration of
+`REFERENCE_CROPS` and `OVERLAY_FRAMES`. Raster registration has scan/pixel
+precision, not the precision of the original numerical output. Generated
+PDFs and reference scans are not committed.
+
 ## Validation
 
 `make check` runs the hydrostatic test, `check_statler`, bounded checks of
