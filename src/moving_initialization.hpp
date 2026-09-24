@@ -5,10 +5,13 @@
 // epsilon remains explicitly chosen in the external initializer/runner.
 inline void initializeMovingFromHydrostatic(MovingThreeFluidSim& moving,
                                            const ThreeFluidSim& hydro) {
-  if(hydro.param.binary_formation!=BINARY_FORMATION_OFF||hydro.param.tidal_cutoff!=TIDAL_CUTOFF_OFF)
-    throw std::invalid_argument("moving solver does not implement formation or stripping");
+  if((hydro.param.binary_formation!=BINARY_FORMATION_OFF&&
+      hydro.param.binary_formation!=BINARY_FORMATION_POWER_LAW)||hydro.param.tidal_cutoff!=TIDAL_CUTOFF_OFF)
+    throw std::invalid_argument("moving solver supports only OFF/POWER_LAW formation and no stripping");
   moving.param.mass={hydro.param.ms,hydro.param.mb,hydro.param.md};
   moving.param.c1=hydro.param.c1;moving.param.c2=hydro.param.c2;moving.param.c4=hydro.param.c4;
+  moving.param.binary_formation=hydro.param.binary_formation;
+  moving.param.capture_coefficient=hydro.param.capture_coefficient;
   const int n=hydro.param.N;
   std::vector<double> faces(n+1,0),state(12*n,0);
   for(int i=0;i<n;++i) {

@@ -4,8 +4,9 @@ This is an experimental radial-fluid solver, not a replacement for the
 hydrostatic solver. The alternating acoustic flux removes the observed
 checkerboard failure in the tested single, split, canonical and concentrated-DM
 runs. Physical convergence and unequal-mass agreement remain separate,
-incomplete validation requirements. No binary-formation or explicit stripping sink
-is enabled in this class; the initializer rejects those configurations.
+incomplete validation requirements. POWER_LAW tidal capture is supported;
+other formation modes and explicit stripping are rejected. See
+[the formation notes](moving-binary-formation.md) for the source and budgets.
 
 ## State and step
 
@@ -24,8 +25,8 @@ separate. The existing ThreeFluidSim equations have not been changed.
 
 The solve advances continuity, radial momentum, random-plus-bulk energy,
 and the enclosed-mass constraint together. It includes self-gravity,
-outward `q*r`, conservative shared-face conduction and the existing c1/c4
-thermal sources. The square-root/inverse-square-root Taylor expansions
+outward `q*r`, conservative shared-face conduction, POWER_LAW capture and the
+existing c1/c4 thermal sources. The square-root/inverse-square-root Taylor expansions
 match the conduction derivation. The c1/c4 closures do not include a
 separate intercomponent bulk-velocity drag model.
 

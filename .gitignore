@@ -8,3 +8,9 @@
 *.o
 *.s
 __pycache__/
+/docs/*.aux
+/docs/*.fdb_latexmk
+/docs/*.fls
+/docs/*.log
+/docs/*.out
+/docs/*.pdf

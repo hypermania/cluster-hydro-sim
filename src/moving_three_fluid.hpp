@@ -1,14 +1,20 @@
 #pragma once
 #include "three_fluid.hpp"
 
+constexpr long long HEATING_DONOR_DISPERSION=0, HEATING_RELATIVE_DISPERSION=1;
+
 // Dimensionless evolution controls only. Initial profiles/grid and observers
-// are supplied separately. Formation and explicit stripping are not supported.
+// are supplied separately. Explicit stripping is not supported.
 struct MovingThreeFluidParam {
   double epsilon = 1e-10;
   double q = 0;
   std::array<double, NF> mass{1e-6, 2e-6, 1e-16};
   std::array<double, NF> c2{};
   std::array<double, NF*NF> c1{}, c4{};
+  long long binary_formation = BINARY_FORMATION_OFF;
+  double capture_coefficient = 0; // number source A rho_s^2 U_s^-0.6
+  long long heating_dispersion = HEATING_DONOR_DISPERSION;
+  long long reflecting_boundary = 0; // insulated rigid wall; otherwise vacuum outflow
   double thermal_length_over_radius = 1;
   double Deltat = 1e-5;
   double max_timestep = 1e-3;
@@ -39,6 +45,8 @@ public:
   double last_change=0;
   int limiting_index=0;
   double last_gravity_work=0, last_heating=0, energy_ledger_error=0;
+  double cumulative_formed_binaries=0, cumulative_capture_energy=0;
+  double last_formed_binaries=0, last_capture_energy=0;
 
   // Input: positive profiles with a common mesh. reference_balance=true is
   // reserved for a supplied q=0 hydrostatic profile; q is never balanced away.
@@ -77,7 +85,7 @@ private:
   std::vector<double> edges, centres, volumes, eta;
   std::vector<double> correction; // Frozen reference acceleration, not force density.
   std::vector<Face> fluxes;
-  std::vector<double> band, rhs, factor, increment, scale, next;
+  std::vector<double> band, rhs, factor, increment, scale, next, refinement;
   std::vector<int> pivots;
   Vec primitive(int i,int f) const;
   Vec storage(const Vec& x) const;
@@ -89,6 +97,10 @@ private:
   void buildFluxes();
   void add(int row,int col,double value);
   void assembleCells();
+  // Frozen per-donor capture frequency; local conservative transfer in the
+  // same band solve. New binaries inherit v_s and random specific energy U_s/2.
+  double captureFrequency(int cell) const;
+  void formationSource(int cell,int fluid,Vec& source,Mat& derivative) const;
   void solveBanded();
   double recoverAndBudget();
   void selectNextTimestep(double change);

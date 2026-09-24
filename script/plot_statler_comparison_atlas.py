@@ -513,7 +513,8 @@ def _source_panel(figure: plt.Figure, source_spec, images: list[np.ndarray]) -> 
 
 
 def make_page(document: fitz.Document, figure_number: int,
-              control: RunData, direct: RunData, *, overlay: bool = False) -> plt.Figure:
+              control: RunData, direct: RunData, *, overlay: bool = False,
+              model_label: str = "HydroSim", note_override: str | None = None) -> plt.Figure:
     if overlay and figure_number not in OVERLAY_FRAMES:
         raise ValueError("reference overlays are calibrated for Figures 11--15 only")
     figure = plt.figure(figsize=(8.27, 11.69) if overlay else (11.69, 8.27))
@@ -526,6 +527,8 @@ def make_page(document: fitz.Document, figure_number: int,
     right = outer[-1]
     data = control if figure_number <= 10 else direct
     note = EJECTION_NOTE if figure_number <= 10 else (DIRECT_NOTE if figure_number <= 15 else FULL_NOTE)
+    if note_override is not None:
+        note = note_override
 
     if figure_number in {1, 11, 16}:
         axes = _make_right_axes(figure, right, 3); plot_evolution(axes, data)
@@ -577,7 +580,7 @@ def make_page(document: fitz.Document, figure_number: int,
         # imshow may change limits even with an axes transform: restore the
         # same explicit contract used for the side-by-side plots.
         apply_panel_axes(axes, figure_number)
-        figure.text(0.09, 0.925, "Colored curves: HydroSim    |    Gray scan: Statler et al. (1987)", fontsize=10)
+        figure.text(0.09, 0.925, f"Colored curves: {model_label}    |    Gray scan: Statler et al. (1987)", fontsize=10)
         figure.text(0.09, 0.085,
                     "Scan-registered overlay, not digitized data; reference annotations remain gray.\n"
                     "Profiles show available saved HydroSim epochs (legend), not matched reference epochs.",

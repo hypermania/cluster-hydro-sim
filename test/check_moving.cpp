@@ -1,5 +1,9 @@
 #include "../src/moving_initialization.hpp"
 #include "../src/moving_comparison.hpp"
+#include "../src/moving_statler_observer.hpp"
+#include "../src/statler_reproduction.hpp"
+#include "../src/moving_statler_initialization.hpp"
+#include "../src/heggie_reproduction.hpp"
 #include <iostream>
 #include <iomanip>
 #include <filesystem>
@@ -38,6 +42,73 @@ void massLedger() {
   };s.evolve(observer);check(calls==41,"observer calls");
   check(s.escaped_mass[0]>0&&s.escaped_heat[0]>0,"missing open fluxes");
 }
+void captureLedger() {
+  auto zero=setup(12),off_zero=zero;
+  zero.param.binary_formation=BINARY_FORMATION_POWER_LAW;
+  zero.advanceAcceptedStep();off_zero.advanceAcceptedStep();
+  check(zero.state==off_zero.state,"zero capture changes evolution");
+  auto s=setup(24);s.param.binary_formation=BINARY_FORMATION_POWER_LAW;
+  s.param.capture_coefficient=1e4;s.param.maxSteps=40;
+  std::array<double,3> initial;
+  for(int f=0;f<NF;++f)initial[f]=s.value(s.zones()-1,f,S::MASS);
+  auto observer=[&](const S& x) {
+    check(x.energy_ledger_error<1e-12,"capture energy ledger");
+    for(int f=0;f<NF;++f) {
+      const double transfer=(f==FS?-1:f==FB?1:0)*x.param.mass[FB]*x.cumulative_formed_binaries;
+      const double error=x.value(x.zones()-1,f,S::MASS)+x.escaped_mass[f]-initial[f]-transfer;
+      check(std::abs(error)<1e-12*initial[f],"capture species mass ledger");
+    }
+  };
+  s.evolve(observer);
+  check(s.cumulative_formed_binaries>0&&s.cumulative_capture_energy<0,"missing capture ledgers");
+
+  // Matrix-only audit at nonzero velocity: formation must transfer both
+  // momentum and bulk energy, not just rho/U. Compare to an OFF twin.
+  auto off=setup(12);
+  for(int i=0;i<off.zones();++i)off.state[S::index(i,FS,S::VEL)]=0.17;
+  auto on=off;on.param.binary_formation=BINARY_FORMATION_POWER_LAW;
+  on.param.capture_coefficient=1e4;off.assembleStep();on.assembleStep();
+  const auto da=(dense(on)-dense(off)).eval();
+  for(int i=0;i<on.zones();++i) {
+    const double r=on.value(i,FS,S::RHO),u=on.value(i,FS,S::U),v=on.value(i,FS,S::VEL);
+    const double k=on.param.mass[FB]*on.param.capture_coefficient*r/std::pow(u,0.6);
+    const double dtvol=on.Deltat*on.volume(i);
+    for(int row=0;row<3;++row) {
+      const double combined=on.rightHandSide()[S::index(i,FS,row)]+on.rightHandSide()[S::index(i,FB,row)]
+        -off.rightHandSide()[S::index(i,FS,row)]-off.rightHandSide()[S::index(i,FB,row)];
+      const double expected=row==S::U?-0.5*dtvol*k*r*u:0;
+      check(std::abs(combined-expected)<1e-13*(1+std::abs(expected)),"formation RHS sum");
+    }
+    check(std::abs(da(S::index(i,FB,S::VEL),S::index(i,FS,S::RHO))+dtvol*k*v)<1e-14,
+      "formation momentum derivative");
+    check(std::abs(da(S::index(i,FB,S::U),S::index(i,FS,S::U))+0.5*dtvol*k*r)<1e-14,
+      "formation birth energy derivative");
+  }
+  on.advanceAcceptedStep();
+  check(on.energy_ledger_error<1e-12,"moving capture kinetic-energy ledger");
+}
+
+void movingStatlerSmoke() {
+  ThreeFluidSim h;h.param=statlerParameters();h.param.N=32;
+  const StatlerInitParam init;initializeCaptureCluster(h,init);
+  S s;s.param.Deltat=1e-9;s.param.maxSteps=20;initializeMovingFromHydrostatic(s,h);
+  const std::string dir="output/check_moving_statler/";
+  std::filesystem::create_directories(dir);
+  MovingStatlerObserver observer(statlerObserverParameters(init),dir);
+  s.evolve(observer);observer.save(dir);
+  check(s.step==20&&s.cumulative_formed_binaries>0,"formation not reached through evolve");
+  check(observer.diagnostic.history.time_trh.size()==21,"moving Statler observer calls");
+  check(observer.diagnostic.snapshots.snapshots[0].radius[0]==s.radius(0),"moving snapshot cell centres");
+  MovingStatlerGrid grid;grid.zones=80;
+  S matched;initializeMovingCaptureCluster(matched,init,grid);
+  check(matched.faces()[1]==grid.first_face&&std::abs(matched.faces().back()/grid.last_face-1)<1e-14,
+        "Statler radial domain");
+  double mass=0;for(int f=0;f<NF;++f)mass+=matched.value(matched.zones()-1,f,S::MASS);
+  check(std::abs(mass/matched.param.mass[FS]/init.stellar_number-1)<1e-14,"matched stellar number");
+  check(std::abs(matched.value(0,FS,S::U)*12-1)<1e-10,"analytic Plummer energy units");
+  matched.param.maxSteps=10;auto no_output=[](const S&){};matched.evolve(no_output);
+  check(matched.cumulative_formed_binaries>0,"matched-domain capture");
+}
 void equilibriumAndTide() {
   auto s=setup(80);s.assembleStep();
   for(int i=0;i<s.zones()-1;++i)for(int f=0;f<3;++f) {
@@ -50,6 +121,60 @@ void equilibriumAndTide() {
     const double expected=s.Deltat*s.volume(i)*s.value(i,f,S::RHO)*s.param.q*s.radius(i)/s.param.epsilon;
     const double got=s.rightHandSide()[S::index(i,f,S::VEL)]-original[S::index(i,f,S::VEL)];
     check(std::abs(got-expected)<1e-12*expected,"tidal source or force-balance guard");
+  }
+}
+void reflectingAndRelativeHeating() {
+  auto s=setup(24);s.param.reflecting_boundary=1;s.param.c2.fill(.1);
+  s.param.maxSteps=30;
+  std::array<double,3> initial{};
+  for(int f=0;f<NF;++f)initial[f]=s.value(s.zones()-1,f,S::MASS);
+  auto observer=[&](const S& x) {
+    for(int f=0;f<NF;++f) {
+      check(x.escaped_mass[f]==0&&x.escaped_energy[f]==0&&x.escaped_heat[f]==0,"reflecting wall leaked");
+      check(std::abs(x.value(x.zones()-1,f,S::MASS)/initial[f]-1)<1e-12,"reflecting mass conservation");
+    }
+    check(x.energy_ledger_error<1e-12,"reflecting energy ledger");
+  };s.evolve(observer);
+  auto off=setup(12),on=off;
+  on.param.heating_dispersion=HEATING_RELATIVE_DISPERSION;
+  on.param.c4[FS*3+FB]=.6;off.assembleStep();on.assembleStep();
+  const auto difference=(dense(on)-dense(off)).eval();
+  for(int i=0;i<4;++i) {
+    const double sum=on.value(i,FS,S::U)+on.value(i,FB,S::U);
+    const double b=.6*on.value(i,FS,S::RHO)*on.value(i,FB,S::RHO);
+    const double source=on.Deltat*on.volume(i)*b/std::sqrt(sum);
+    const int row=S::index(i,FS,S::U);
+    check(std::abs((on.rightHandSide()[row]-off.rightHandSide()[row])/source-1)<1e-12,
+          "relative dispersion heating RHS");
+    for(int f:{FS,FB})check(std::abs(difference(row,S::index(i,f,S::U))/(source/(2*sum))-1)<1e-10,
+          "relative dispersion cross-temperature derivative");
+  }
+  on=off;on.param.heating_dispersion=HEATING_RELATIVE_DISPERSION;
+  on.param.c4[FB*3+FB]=.6;on.assembleStep();
+  const auto diagonal=(dense(on)-dense(off)).eval();
+  for(int i=0;i<4;++i) {
+    const int row=S::index(i,FB,S::U);
+    const double u=on.value(i,FB,S::U),r=on.value(i,FB,S::RHO);
+    const double source=on.Deltat*on.volume(i)*.6*r*r/std::sqrt(2*u);
+    check(std::abs(diagonal(row,row)/(source/(2*u))-1)<1e-10,
+          "same-component heating must include both temperature derivatives");
+  }
+}
+
+void heggieSmoke() {
+  for(int model=0;model<4;++model) {
+    HeggieInitParam initial;initial.zones=32;initial.model=model;
+    S s;s.param.maxSteps=20;const auto units=initializeHeggie(s,initial);
+    check(s.param.binary_formation==BINARY_FORMATION_OFF&&s.param.reflecting_boundary==1,
+          "Heggie physics selection");
+    if(model==1)check(std::abs(s.value(0,FB,S::RHO)/s.value(0,FS,S::RHO)-.01)<1e-15,
+                     "Heggie segregation fraction");
+    if(model>=2)check(s.param.c4[FS*3+FB]==2*s.param.c4[FB*3+FS],"Heggie heating partition");
+    check(units.time_unit_over_trh>2&&units.time_unit_over_trh<3,"Heggie time conversion");
+    const std::string dir="output/check_heggie_"+std::to_string(model)+"/";
+    std::filesystem::create_directories(dir);HeggieObserver observer(units,dir);
+    s.evolve(observer);observer.finish(dir,s,"SMOKE");
+    check(std::filesystem::file_size(dir+"history.dat")==21*13*sizeof(double),"Heggie binary history layout");
   }
 }
 void splitSymmetry() {
@@ -74,6 +199,14 @@ void failEarly() {
   s=setup();s.state.push_back(1);failed=false;
   try{s.advanceAcceptedStep();}catch(const std::exception&){failed=true;}
   check(failed,"resized state reached band solve");
+  for(long long mode:{BINARY_FORMATION_MODE_1,BINARY_FORMATION_MODE_2,99LL}) {
+    s=setup();s.param.binary_formation=mode;failed=false;
+    try{s.validate();}catch(const std::exception&){failed=true;}
+    check(failed,"unsupported capture mode accepted");
+  }
+  s=setup();s.param.capture_coefficient=-1;failed=false;
+  try{s.validate();}catch(const std::exception&){failed=true;}
+  check(failed,"negative capture coefficient accepted");
 }
 void dilutedReference() {
   auto s=setup();
@@ -102,6 +235,8 @@ void thermalAgreement() {
 }
 void parameterRoundTrip() {
   auto s=setup();s.param.q=.123;s.param.c1.fill(.314);s.param.mass={1,2,3};
+  s.param.binary_formation=BINARY_FORMATION_POWER_LAW;s.param.capture_coefficient=.42;
+  s.param.reflecting_boundary=1;s.param.heating_dispersion=HEATING_RELATIVE_DISPERSION;
   const std::string dir="output/check_moving_parameters/";
   std::filesystem::create_directories(dir);save_param_for_Mathematica(s.param,dir);
   MovingThreeFluidParam result{};std::ifstream file(dir+"param.dat",std::ios::binary);
@@ -276,7 +411,11 @@ int main(int argc,char**argv) {try {
   if(argc==3&&std::string(argv[1])=="--export") {exportFixture(argv[2]);return 0;}
   if(argc==2&&std::string(argv[1])=="--audit-hydro") {auditHydro();return 0;}
   if(argc==2&&std::string(argv[1])=="--benchmark") {benchmark();return 0;}
-  bandSolve();massLedger();equilibriumAndTide();splitSymmetry();failEarly();dilutedReference();tidalEvolution();
+  bandSolve();massLedger();
+  std::cout<<"checking capture ledger"<<std::endl;captureLedger();
+  std::cout<<"checking moving Statler"<<std::endl;movingStatlerSmoke();
+  equilibriumAndTide();splitSymmetry();failEarly();dilutedReference();tidalEvolution();
+  reflectingAndRelativeHeating();heggieSmoke();
   thermalAgreement();parameterRoundTrip();singleSplitAgreement();checkerboardDamping();noConductionEvolution();rawMassTransport();
   std::cout<<"moving checks passed: band/dense, mass/heat export, equilibrium, q, split, fail-early\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -3,6 +3,9 @@
 #include "statler_reproduction.hpp"
 #include "statler_observer.hpp"
 #include "moving_comparison.hpp"
+#include "moving_statler_observer.hpp"
+#include "moving_statler_initialization.hpp"
+#include "heggie_reproduction.hpp"
 #include <filesystem>
 
 void statler_reproduction(bool direct, const std::string& directory,
@@ -28,6 +31,39 @@ void statler_reproduction(bool direct, const std::string& directory,
   StatlerObserver observer(observing);
   sim.evolve(observer);
   observer.save(output);
+}
+
+void moving_statler_reproduction(const std::string& directory,int zones,
+                                double final_time_trh,long long max_steps) {
+  if(directory.empty()||zones<3||!std::isfinite(final_time_trh)||final_time_trh<=0||max_steps<=0)
+    throw std::invalid_argument("invalid moving Statler controls");
+  if(std::filesystem::exists(directory+"/param.dat"))
+    throw std::invalid_argument("choose a fresh output directory");
+  const StatlerInitParam initial;
+  auto observing=statlerObserverParameters(initial);
+  // Approximate square epochs read from Statler Fig. 11a; retain the actual
+  // accepted times in every legend. The paper does not tabulate these times.
+  observing.snapshot_times_trh={0,1,5,10,18,50,350,2000,10000};
+  MovingStatlerGrid grid;grid.zones=zones;
+  MovingThreeFluidSim sim;
+  sim.param.Deltat=1e-9;sim.param.max_timestep=1e4;
+  sim.param.maxTime=final_time_trh/observing.time_unit_over_trh;
+  sim.param.maxSteps=max_steps;
+  initializeMovingCaptureCluster(sim,initial,grid);
+  const std::string output=directory.back()=='/'?directory:directory+"/";
+  std::filesystem::create_directories(output+"initialization");
+  std::filesystem::create_directories(output+"observer");
+  std::filesystem::create_directories(output+"grid");
+  save_param_for_Mathematica(initial,output+"initialization/");
+  save_param_for_Mathematica(observing,output+"observer/");
+  save_param_for_Mathematica(grid,output+"grid/");
+  save_param_for_Mathematica(sim.param,output);
+  write_to_file(sim.faces(),output+"initial_faces.dat");
+  MovingStatlerObserver observer(observing,output);
+  try {sim.evolve(observer);}catch(...) {observer.save(output);throw;}
+  observer.save(output);
+  if(sim.totalTime<sim.param.maxTime)
+    throw std::runtime_error("moving Statler run stopped before requested endpoint");
 }
 
 void one_fluid_split_in_two(void){
@@ -287,6 +323,21 @@ void binary_formation(void){
 int main(int argc, char** argv) {
   if(argc>1) {
     try {
+      if(std::string(argv[1])=="moving-heggie") {
+        if(argc<4||argc>6)throw std::invalid_argument(
+          "usage: main moving-heggie output_directory model(0:single,1:segregation,2:BS,3:BS+BB) [f_star] [zones]");
+        HeggieInitParam initial;initial.model=std::stoll(argv[3]);
+        if(argc>4)initial.f_star=std::stod(argv[4]);
+        if(argc>5)initial.zones=std::stoll(argv[5]);
+        runMovingHeggie(argv[2],initial);return 0;
+      }
+      if(std::string(argv[1])=="moving-statler") {
+        if(argc<3||argc>6)throw std::invalid_argument(
+          "usage: main moving-statler output_directory [zones=500] [final_time_trh=10000] [max_steps=2000000]");
+        moving_statler_reproduction(argv[2],argc>3?std::stoi(argv[3]):500,
+          argc>4?std::stod(argv[4]):10000,argc>5?std::stoll(argv[5]):2000000);
+        return 0;
+      }
       if(std::string(argv[1])=="moving-comparison") {
         if(argc<5||argc>9)throw std::invalid_argument(
           "usage: main moving-comparison output_directory sample(0..3) final_time [epsilon] [max_dt] [canonical_zones] [max_steps]");

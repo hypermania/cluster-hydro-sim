@@ -1,0 +1,156 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=0.8in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,hyperref}
+\usepackage{graphicx}
+\title{Tidal capture in the moving-fluid solver}
+\author{}
+\date{24 September 2026}
+\begin{document}
+\maketitle
+\section{Source and discrete equations}
+All quantities below are dimensionless in the existing HydroSim units.
+The POWER\_LAW number source and mass-transfer rate are
+\begin{equation}
+ S=A\rho_s^2u_s^{-3/5},\qquad \dot\rho_b=-\dot\rho_s=m_b S,
+ \qquad m_b=2m_s.
+\end{equation}
+The external Statler initializer retains the Maxwellian average of the
+Press--Teukolsky cross section used by the hydrostatic reproduction:
+\begin{equation}
+ A=\frac{107\Gamma(0.9)}{50\,2^{0.7}3^{0.4}\pi^{3/2}}
+ \frac{(R_*/r_0)^{0.9}m_s^{-1.9}}{\ln\Lambda}.
+\end{equation}
+This is tidal capture, not three-body formation. Binary heating through
+the existing $c_4$ terms is a separate process. The binary internal binding
+energy is not an evolved state variable.
+
+Let $v$ denote radial bulk velocity, $u$ random specific energy, and
+$\epsilon=r_0^2/(u_0t_0^2)$. The conservative gas variables are
+\begin{equation}
+ W(\rho,v,u)=\begin{pmatrix}\rho\\\rho v\\\rho(u+\epsilon v^2/2)\end{pmatrix}.
+\end{equation}
+New binaries inherit the singles' bulk velocity and have random specific
+energy $u_s/2$, as in the existing POWER\_LAW model. Freeze only the positive
+per-donor frequency $k=m_b A\rho_s^n(u_s^n)^{-3/5}$ within a step. Then
+\begin{align}
+ F_s&=-kW_s,&
+ F_b&=k\begin{pmatrix}\rho_s\\\rho_s v_s\\\rho_s(u_s/2+\epsilon v_s^2/2)\end{pmatrix},&F_d&=0.
+\end{align}
+These sources conserve local total mass and radial momentum. They remove
+resolved random energy at rate $-k\rho_su_s/2$. This capture-cooling term
+must not be described as numerical energy loss. Conservative recovery of
+the binary velocity and energy also accounts for mixing streams of different
+bulk velocity; merely updating binary $u$ would omit this contribution.
+
+For cell volume $V_i=(r_{i+1/2}^3-r_{i-1/2}^3)/3$ and primitive increment
+$\delta x_s=(\delta\rho_s,\delta v_s,\delta u_s)$, add
+$-\Delta t V_i J_f$ to the single-star columns of each component's three
+matrix rows, and add $\Delta t V_i F_f$ to its right-hand side. The Jacobians are
+\begin{align}
+ J_s&=-k\begin{pmatrix}
+ 1&0&0\\ v_s&\rho_s&0\\
+ u_s+\epsilon v_s^2/2&\epsilon\rho_s v_s&\rho_s
+ \end{pmatrix},\\
+ J_b&=k\begin{pmatrix}
+ 1&0&0\\ v_s&\rho_s&0\\
+ u_s/2+\epsilon v_s^2/2&\epsilon\rho_s v_s&\rho_s/2
+ \end{pmatrix}.
+\end{align}
+The additions lie within the existing $(13,14)$ half-bandwidth. They join
+continuity, momentum, energy, and enclosed-mass constraints in the same solve;
+there is no second evolution loop or post-solve density reset. Cost remains
+$O(N)$. An isolated donor obeys
+$\rho_s^{n+1}=\rho_s^n/(1+k\Delta t)$ while its $u_s$ and $v_s$ remain unchanged.
+The frozen-frequency method is first-order consistent with the nonlinear
+rate but is not identical to the hydrostatic solver's forward-Euler transfer
+at finite timestep.
+
+\section{Budgets and numerical checks}
+The accepted-step ledgers use the same linearized sources as the matrix:
+\begin{align}
+ \Delta N_b&=\sum_i\frac{\Delta t V_i k_i}{m_b}(\rho_{s,i}+\delta\rho_{s,i}),\\
+ \Delta E_{\mathrm{capture}}&=-\frac12\sum_i\Delta t V_i k_i
+ (\rho_{s,i}u_{s,i}+u_{s,i}\delta\rho_{s,i}+\rho_{s,i}\delta u_{s,i}).
+\end{align}
+For example, binary mass plus integrated binary outflow minus
+$m_bN_{\mathrm{formed}}$ stays constant. The gas-energy ledger separately
+accounts for boundary energy flux, conduction, interaction heating, gravity
+work, and capture cooling. It checks the discrete gas-energy equation, not
+exact conservation of gas plus gravitational potential energy.
+
+Capture can expose poor componentwise accuracy in almost unforced matrix
+rows. We retain the original $10^{-8}$ backward-error threshold and refine
+the original equations using the already computed band LU, with extended
+precision residual accumulation. There are at most three correction solves,
+so the asymptotic complexity is unchanged. Failed positivity or residual
+checks terminate the run; there are no timestep retries.
+
+The executable Mathematica companion is
+\texttt{script/mathematica/moving\_capture.wls}. It derives every local matrix
+addition and verifies mass, momentum, cooling, and the isolated-donor solution.
+The C++ tests check species budgets through \texttt{evolve()}, nonzero-velocity
+matrix entries, the gas-energy budget, parameter serialization, initialization,
+and the public observer output.
+
+\section{Statler comparison and limitations}
+The target is the direct-heating-only calculation of Statler, Ostriker, and
+Cohn (1987), Section IV b and Figs.~11--15. We use $N_*=3\times10^5$,
+$M_*=0.7M_\odot$, $R_*=0.57R_\odot$, $r_0=1.13\,\mathrm{pc}$, and
+$t_{rh}=225\,\mathrm{Myr}$. The initial model is an isotropic Plummer sphere,
+with tiny nonzero binary and inert dark-component seeds. The radial domain
+is $[0,10^4]$, with the first nonzero face at $10^{-6}$, matching the radial
+range stated in the paper. The canonical hydrostatic initializer instead has
+first face $10^{-2}$; this would not resolve an arbitrarily contracting core.
+The analytic moving initializer uses $u=\rho_{\mathrm{tot},0}/(12\sqrt{1+r^2})$
+and the existing discrete reference-force correction.
+
+The plots use the existing public unit conversions:
+$\rho_{\mathrm{Statler}}=3\rho/(4\pi)$,
+$v_{\mathrm{rms,Statler}}^2=6u$, and unchanged radius $r/r_0$.
+Time is converted using the initializer's physical $t_0/t_{rh}$, not fitted
+to the collapse time. The heating-rate multiplier is $9t_{rh}/t_0$.
+Scan overlays preserve the reference aspect ratios and axes. Profile legends
+state the actual saved epochs. The selected targets $t/t_{rh}=18,50,350,2000$
+are approximate square epochs read from Fig.~11a, not tabulated numbers from
+the paper. The plotter requires a saved profile within 5\% of each target
+and does not substitute a distant endpoint. This uncertainty matters for
+quantitative profile fitting in Figs.~14 and 15.
+
+The comparison matches initial scales, capture prescription, and displayed
+observables, not the full kinetic model. HydroSim retains its local fluid
+heating and conduction closures, whereas Statler solves orbit-averaged
+Fokker--Planck equations and suppresses encounters that would eject stars in
+the direct-heating-only case. No encounter-driven ejection or binary
+disruption is added here. The fixed coefficient Coulomb logarithms do not
+implement the paper's evolving core-number prescription.
+Open fluid-boundary escape is separately measured;
+it is not a substitute for an encounter-ejection prescription. Spatial and
+timestep convergence must be checked before interpreting a residual mismatch.
+\subsection{Completed runs and remaining discrepancy}
+Both the 500- and 1000-cell runs reach $10^4t_{rh}$. The 500-cell run
+peaks at $t/t_{rh}=14.3314$ with central density $42.5166$ in the plotted
+units and ends with $3304.55$ binaries. The 1000-cell results are
+$14.3257$, $42.9097$, and $3374.01$, respectively. For the 500-cell run,
+mass including exported material changes by at most $1.18\times10^{-14}$;
+the largest accepted-step gas-energy ledger residual is $4.58\times10^{-17}$.
+Boundary export is only $1.44\times10^{-7}$ of the initial mass.
+
+These checks do not establish a converged reproduction. The reference
+central-density peak is several thousand rather than about 43, and
+HydroSim expands its core much more strongly after the bounce. In addition,
+the two resolutions disagree substantially at late times: the final
+central binary-to-single density ratios are $0.0209$ and $0.0070$.
+Time-aligned late density differences reach a factor of about ten.
+Thus conservation and close agreement of the peak time and total binary
+count do not validate the late core profiles. The overlays show this
+failure rather than shifting or renormalizing curves to hide it.
+Before assigning the discrepancy entirely to physical closures, the
+moving solver needs spatial and timestep convergence of its post-collapse
+core transport, reference-force correction, and energy/work quadrature.
+\IfFileExists{../output/moving_statler_matched500/plots/resolution_comparison.pdf}{
+\begin{figure}[p]\centering
+\includegraphics[width=.92\textwidth]{../output/moving_statler_matched500/plots/resolution_comparison.pdf}
+\caption{500-cell (solid) and 1000-cell (dashed) histories at the same physical
+times. This comparison demonstrates unresolved late evolution.}
+\end{figure}}{}
+\end{document}

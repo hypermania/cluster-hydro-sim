@@ -67,6 +67,8 @@ check: $(check_NAME) check_statler check_examples check_moving
 	python3 -m unittest discover -s test -p 'test_*.py'
 
 check-moving-symbolic: check_moving
+	wolframscript -file script/mathematica/moving_capture.wls
+	wolframscript -file script/mathematica/heggie_units.wls
 	wolframscript -code 'Get["script/mathematica/moving_three_fluid_compiler.wl"]; If[TrueQ[MovingThreeFluid`allChecksPassed],Exit[0],Exit[1]]'
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_moving --export output/moving_matrix_fixture
 	wolframscript -file script/mathematica/check_moving_cpp.wls

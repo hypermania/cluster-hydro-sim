@@ -1,0 +1,177 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=0.8in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx,hyperref}
+\title{Moving-fluid comparison with Heggie \& Aarseth (1992)}
+\author{}
+\date{24 September 2026}
+\begin{document}
+\maketitle
+\section{Which models are compared?}
+Figures~1--4 of Heggie \& Aarseth, MNRAS \textbf{257}, 513 (1992),
+are gaseous models with primordial binaries. They are not the $N$-body
+calculations described later in that paper. We therefore turn off tidal
+capture and three-body formation. Figures~1--2 assume a single component,
+with a spatially fixed binary fraction entering only its heating coefficient.
+Figure~3 has two components with $m_b/m_s=2$, $M_b/M_s=0.01$, and no
+encounter heating. Figure~4 has initial number fraction
+$f=N_b/(N_s+N_b)=0.03$, hence $M_b/M_s=2f/(1-f)$, and compares
+binary--single heating with and without binary--binary heating.
+There is no disruption or encounter ejection in these gas tests.
+
+All models start from a Plummer sphere with equal component dispersions.
+The outer wall reflects matter and insulates heat. We place it at $10^4$
+Plummer scales; the paper specifies only a large reflecting radius.
+We use the Heggie--Ramamani conductivity $C=0.104$, also documented in
+\href{https://academic.oup.com/mnras/article/420/1/309/1045029}{Breen \& Heggie (2012)}.
+We assume $\ln\Lambda=10$ for the two-component heating calculations:
+this is a representative value discussed in the paper, not an unambiguously
+specified input for Fig.~4. These unspecified inputs prevent a claim of
+uniquely matched published parameters. The chosen $N_*=3\times10^5$ sets
+the small dynamical-to-relaxation time ratio; it is not the later 2500-star
+$N$-body calculation.
+The gas-section figure captions do not explicitly restate their absolute
+length and density units. We use the standard $G=M=-4E_0=1$ convention
+specified for the paper's $N$-body models, without fitting a density
+normalization. This is an additional assumption to verify against the
+original gas-model data, especially for Fig.~4; dimensionless density
+ratios and potential ratios in Fig.~3 do not depend on it.
+
+\section{Dimensionless equations and coefficients}
+We use $M_0=4\pi\rho_0r_0^3$, $u_0=GM_0/r_0$,
+$t_0=r_0/[3\widehat m_s\ln\Lambda\sqrt{u_0}]$, and
+$\sigma_i^2=2u_0\widehat u_i/3$. All variables in the solver are
+dimensionless; hats are omitted below. The common conversion factor is
+\begin{equation}
+ \frac{G^2m_{s,\mathrm{phys}}\rho_0t_0}{u_0^{3/2}}
+ =\frac{1}{12\pi\ln\Lambda}.
+\end{equation}
+Equation~(24) of the paper becomes the existing conductive and exchange
+energy-density sources
+\begin{align}
+ Q_{\mathrm{cond},i}&=\frac{1}{r^2}\partial_r
+       \left(r^2\rho_i c_{2,i}\partial_r\sqrt{u_i}\right),&
+ c_{2,i}&=2\sqrt{\frac23}\,C\frac{m_i}{m_s},\\
+ Q_{\mathrm{ex},i}&=-\sum_{j\ne i}\frac{c_1\rho_i\rho_j
+        (m_i u_i-m_j u_j)}{m_s(u_i+u_j)^{3/2}},&
+ c_1&=\frac{1}{\sqrt{3\pi}}.
+\end{align}
+Equal Coulomb logarithms are used in these expressions. Pairwise exchange
+cancels exactly when summed over the components.
+
+The dimensional heating rates in Eqs.~(3) and (10) of the paper are
+\begin{align}
+ \rho\epsilon_{bs}&=3.807\frac{n_b n_sG^2m_s^3}{\sigma_{\mathrm{eff}}},&
+ \sigma_{\mathrm{eff}}&=\sqrt{\frac23}\sqrt{\sigma_s^2+\sigma_b^2},\\
+ \rho\epsilon_{bb}&=10\frac{G^2m_s^3n_b^2}{\sigma_b}.
+\end{align}
+Thus the dimensionless total binary--single heating is
+\begin{equation}
+ Q_{bs}=B\frac{\rho_s\rho_b}{\sqrt{u_s+u_b}},\qquad
+ B=\frac{3.807}{16\pi\ln\Lambda}.
+\end{equation}
+Singles receive $2Q_{bs}/3$ and binaries $Q_{bs}/3$.
+Binary--binary heating goes entirely to the binaries:
+\begin{equation}
+ Q_{bb}=\frac{5\sqrt3}{24\pi\ln\Lambda}
+                  \frac{\rho_b^2}{\sqrt{2u_b}}.
+\end{equation}
+For the single-component models,
+$f^*=f(1-f)/[\ln\Lambda(1+f)^2]$ is held fixed, and
+\begin{equation}
+ Q=\frac{3.807 f^*}{8\pi}\frac{\rho^2}{\sqrt{2u}}.
+\end{equation}
+We run $f^*=0.001,0.002,0.005,0.01,0.02$.
+
+The optional relative-dispersion heating closure adds
+$Q_i=\sum_j c_{4,ij}\rho_i\rho_j(u_i+u_j)^{-1/2}$.
+Densities are frozen in this existing semi-implicit thermal operator; its
+energy derivatives are
+\begin{equation}
+ \partial_{u_k}Q_i=-\sum_j\frac{c_{4,ij}\rho_i\rho_j}
+                  {2(u_i+u_j)^{3/2}}(\delta_{ik}+\delta_{jk}).
+\end{equation}
+The diagonal case receives both derivatives. These entries and the constant
+right-hand side join the same band solve. This closure does not replace the
+default donor-dispersion heating used for the Statler runs.
+The reflective boundary has zero mass and energy flux, zero luminosity,
+and implicit wall momentum flux $P/\epsilon+\rho cv$, where
+$c^2=(5/3)(2/3)u/\epsilon$ and $c$ is frozen during a step. The matrix
+half-bandwidth remains $(13,14)$ and the cost remains $O(N)$.
+
+\section{Observable units}
+For a Plummer sphere in $G=M=1$, initial $E=-1/4$ units,
+$a=3\pi/16$. With actual finite-volume initial mass $M_{\mathrm{code}}$,
+\begin{equation}
+ r_{\mathrm{NB}}=ar,\qquad
+ \rho_{\mathrm{NB}}=\frac{\rho}{4\pi a^3M_{\mathrm{code}}}.
+\end{equation}
+Equation~(15) uses \emph{base-ten} logarithm:
+$t_{rh}=0.06M^{1/2}r_h^{3/2}/(G^{1/2}m_s\log_{10}\Lambda)$.
+Consequently
+\begin{equation}
+ \frac{t_0}{t_{rh}}=
+ \frac{1}{0.18\ln(10)\,r_{h,\mathrm{code}}^{3/2}\sqrt{M_{\mathrm{code}}}}.
+\end{equation}
+No collapse-time alignment is fitted. We calculate the core radius from
+$r_c^2=9\sigma_c^2/(4\pi G\rho_c)$, using the mass-weighted central
+dispersion in the two-component case. The Fig.~1 core mass is the paper's
+estimate $M_c=0.517(4\pi/3)\rho_c r_c^3$, not the integrated mass inside $r_c$.
+
+Figure~3 uses $\Phi_c/\Phi_c(0)$ and
+$\xi_i=t_{rc,i}\,d\ln\rho_{c,i}/dt$, with
+\begin{equation}
+ \frac{t_{rc,i}}{t_0}=0.34\left(\frac23\right)^{3/2}12\pi
+        \frac{m_s}{m_i}\frac{u_i^{3/2}}{\rho_i}.
+\end{equation}
+The derivative and relaxation time use the same code-time convention.
+The positive potential depth is integrated as $\int\rho_{\rm tot}r\,dr$.
+
+\section{Validation and interpretation}
+The Mathematica companion derives six conversion identities. C++ tests
+check the heating matrix and right-hand side, wall fluxes, mass and gas-energy
+budgets, and short evolution of all four model types. Python tests read
+the binary output and independently check the observable normalization
+and growth-rate units. Settings are saved separately for evolution,
+initialization, and the observer. A density ceiling is a labelled stop,
+not an extension or extrapolation through unresolved collapse.
+
+Passing these checks validates the implementation of the stated local
+sources, not agreement with the gas-model reference. The moving solver
+evolves inertial radial flow and uses a finite-volume acoustic flux and
+reference-force correction, while the reference uses quasistatic gas
+equations. Post-collapse transport and spatial convergence must be tested
+before interpreting differences as physical. Binary heating draws on an
+untracked internal binding reservoir; conservation of resolved gas energy
+alone is not expected. The energy ledger instead checks boundary fluxes,
+discrete gravitational work, and specified sources.
+\subsection{Initial 400-cell results}
+All eight models stop without a numerical exception. The $f^*=0.001$ and
+$0.002$ models reach the density ceiling at $16.684$ and $17.627\,t_{rh}$;
+the other single-component models reach $1000\,t_{rh}$. The unheated
+segregation case reaches the ceiling at $13.644\,t_{rh}$, beyond the
+potential-ratio interval displayed in Fig.~3. The binary--single-only
+case reaches the ceiling at $12.620\,t_{rh}$, rather than reproducing the
+reference bounce. The binary--single plus binary--binary model reaches
+$150\,t_{rh}$. Across these tests, relative mass drift is below
+$1.6\times10^{-15}$ and the step gas-energy ledger residual below
+$5.1\times10^{-17}$.
+
+The unheated Fig.~3 curves are qualitatively close. The heated models
+are not quantitatively reproduced: Figs.~1--2 develop late core behavior
+absent from the reference, and Fig.~4 differs in peak density and in
+whether binary--single heating arrests collapse. These results motivate
+a convergence study of transport and the reference-force correction,
+not a claim of a different physical result. The uncertain absolute
+gas-model density normalization cannot explain the collapse-versus-bounce
+disagreement or the dimensionless core-mass discrepancy.
+
+Doubling the grid to 800 cells does not establish convergence. For
+$f^*=0.005$, peak singles density changes from $374.12$ to $272.96$, and
+the minimum core-mass fraction from $0.00433$ to $0.00119$. For BS+BB,
+the peak changes from $4.506$ to $5.083$, and final singles density from
+$0.00824$ to $0.03941$. Both finer runs reach their endpoints. The fixed
+initial reference-force correction can become relatively important when
+the core expands and its gravity weakens; it and the gravitational-work
+quadrature need an independent audit. This is a numerical hypothesis,
+not an established explanation of all mismatches.
+\end{document}
