@@ -3,6 +3,7 @@
 #include "statler_reproduction.hpp"
 #include "statler_observer.hpp"
 #include "moving_comparison.hpp"
+#include "heggie_hydrostatic.hpp"
 #include <filesystem>
 
 void statler_reproduction(bool direct, const std::string& directory,
@@ -287,6 +288,19 @@ void binary_formation(void){
 int main(int argc, char** argv) {
   if(argc>1) {
     try {
+      if(std::string(argv[1])=="hydro-heggie") {
+        if(argc<4||argc>11)throw std::invalid_argument(
+          "usage: main hydro-heggie output model [f_star] [zones] [final_trh] [u_tolerance] [max_steps] [single_scale] [binary_scale_ratio]");
+        HydroHeggieInitParam p;p.model=std::stoll(argv[3]);
+        if(argc>4)p.f_star=std::stod(argv[4]);
+        if(argc>5)p.zones=std::stoll(argv[5]);
+        HeggieHydroProfileParam profile;
+        if(argc>9)profile.single_scale=std::stod(argv[9]);
+        if(argc>10)profile.binary_scale_ratio=std::stod(argv[10]);
+        runHydroHeggie(argv[2],p,argc>6?std::stod(argv[6]):0,
+                      argc>7?std::stod(argv[7]):1e-3,argc>8?std::stoll(argv[8]):1000000,profile);
+        return 0;
+      }
       if(std::string(argv[1])=="moving-comparison") {
         if(argc<5||argc>9)throw std::invalid_argument(
           "usage: main moving-comparison output_directory sample(0..3) final_time [epsilon] [max_dt] [canonical_zones] [max_steps]");

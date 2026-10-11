@@ -1,0 +1,229 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=.8in]{geometry}
+\usepackage{amsmath,amssymb,graphicx,booktabs}
+\usepackage[colorlinks=true,urlcolor=blue,linkcolor=blue]{hyperref}
+\graphicspath{{../output/heggie_stock2000/plots/}{../output/heggie_stock_calibrated2000/plots/}}
+\title{Heggie Figs.~1--4 using unchanged ThreeFluidSim}
+\author{HydroSim reproduction note}
+\date{4 October 2026}
+\begin{document}
+\maketitle
+\section{Scope and origin of the previous changes}
+We rerun the gas-model comparisons of Heggie and Aarseth (1992),
+\emph{MNRAS} \textbf{257}, 513,
+\href{https://doi.org/10.1093/mnras/257.3.513}{paper},
+using the public hydrostatic solver at upstream revision \texttt{82d09b8}.
+The reproduction adds initialization, observation, run scripts and plots,
+but does not change \texttt{ThreeFluidSim} or its evolution operators.
+The paper's Figs.~1--4 are gas models with primordial-binary heating,
+not its later $N$-body calculations and not binary-formation runs.
+
+The earlier local experiment (\texttt{18cd6c4}) added three features:
+\begin{enumerate}
+\item \emph{Relative-dispersion heating}, motivated by the paper's Eq.~(3).
+It replaced a one-component inverse dispersion by
+$(U_s+U_b)^{-1/2}$ in BS heating and differentiated with respect to both
+new energies. Specifically, for $S=U_s+U_b$ it used
+$S^{-1/2}\simeq3/(2\sqrt{S^n})-S^{n+1}/[2(S^n)^{3/2}]$.
+This requires cross-component matrix entries and a matching RHS; it is
+not just a constant conversion factor.
+\item \emph{A reflecting sphere}, specified by the paper in Sec.~3.1.
+The added boundary held the outer radius fixed, set the last conduction
+row to $U_{N-1}-U_{N-2}=0$, and preserved the wall's entropy-based
+pressure during remapping. In the existing nonconservative conduction
+stencil, this is a zero-gradient condition, not a proof of an exact
+zero-flux energy ledger.
+\item \emph{Configurable initial endpoints}, a numerical choice made for
+the experiment. It extended the canonical Plummer initializer from its
+built-in $10^{-2}$--$10^3$ domain to $10^{-6}$--$10^4$. The paper does
+not prescribe these particular endpoints.
+\end{enumerate}
+The public hydrostatic solver has none of these options. We therefore
+retain its native grid, single-component heating denominators, outer
+hydrostatic equation and fixed outer $U$ during conduction. The last
+radius may move. The previous local results are controls, not results
+produced by this PR.
+
+\section{What the unchanged solver implements}
+All internal quantities are dimensionless; $P_i=2\rho_iU_i/3$ and
+$\sigma_i^2=2U_i/3$, with $\gamma=5/3$ for both species. A binary's
+$U_b$ is its centre-of-mass kinetic energy, not its binding energy.
+We take $C=0.104$, $m_b=2m_s$ in the two-component runs and
+$\ln\Lambda=10$. Formation, destruction, ejection and tidal removal
+are off. The precise Fig.~4 Coulomb logarithm and distant boundary
+location are not uniquely specified by the paper.
+
+Define the dimensionless coefficients obtained from Eqs.~(3) and (10),
+\begin{equation}
+ B=\frac{3.807}{16\pi\ln\Lambda},\qquad
+ D=\frac{5\sqrt3}{24\pi\ln\Lambda}.
+\end{equation}
+Heggie's desired specific heating terms are
+\begin{equation}
+ Q_s=\frac{2B\rho_b}{3\sqrt{U_s+U_b}},\qquad
+ Q_b=\frac{B\rho_s}{3\sqrt{U_s+U_b}}+
+       \frac{D\rho_b}{\sqrt{2U_b}}.
+\end{equation}
+We configure the \emph{existing} coefficients as
+$c_{4,sb}=2B/(3\sqrt2)$, $c_{4,bs}=B/(3\sqrt2)$ and
+$c_{4,bb}=D/\sqrt2$. Consequently, the actual stock-solver sources are
+\begin{equation}
+ Q_s^{\rm stock}=\frac{2B\rho_b}{3\sqrt{2U_s}},\qquad
+ Q_b^{\rm stock}=\frac{B\rho_s}{3\sqrt{2U_s}}+
+       \frac{D\rho_b}{\sqrt{2U_b}}.
+\end{equation}
+The BS heat partition remains $2:1$, and BB self-heating is exact in
+this normalization. BS heating agrees at $U_s=U_b$, but its ratio to
+the desired rate is
+\begin{equation}
+ \frac{Q_{\rm BS}^{\rm stock}}{Q_{\rm BS}^{\rm Heggie}}
+ =\sqrt{\frac{U_s+U_b}{2U_s}}.
+\end{equation}
+At equipartition, $U_b=U_s/2$, this is $\sqrt3/2\simeq0.866$.
+Thus a constant coefficient cannot make the two models equivalent at
+all times. The companion Mathematica file checks this mapping and the
+dimensionless conduction and exchange coefficients,
+$c_{2,i}=2\sqrt{2/3}\,C m_i/m_s$ and $c_{1,ij}=1/\sqrt{3\pi}$.
+
+For Figs.~1--2 the single effective fluid uses the solver's existing
+self-heating slot \texttt{FB}; the other two slots are negligible
+identical clones and all particle masses are equal. This is a storage
+choice, not a physical binary fraction of unity. It reproduces the
+single-fluid source $3.807f^*\rho/[8\pi\sqrt{2U}]$ without modifying
+the conduction operator. Every runner calls the normal \texttt{evolve()},
+and saving is performed only by a read-only observer.
+
+\section{Units, profile fit and diagnostics}
+Let $\mathcal M$ be the initial code mass and $L=3\pi/16$. We plot
+\begin{equation}
+ r_{\rm plot}=Lr,\qquad
+ \rho_{\rm plot}=\frac{\rho}{4\pi L^3\mathcal M},\qquad
+ \tau=\frac{t_{\rm code}}{0.18\ln(10)r_h(0)^{3/2}\sqrt{\mathcal M}}.
+\end{equation}
+The base-ten logarithm in the paper's relaxation time, Eq.~(15), is
+converted explicitly. The baseline continuum Plummer normalization has
+$G=M(0)=1$, $E(0)=-1/4$.
+
+The optional Fig.~4 fit varies the singles' Plummer scale $a$ and the
+relative binary scale $b$, keeping $\mu=M_b/M_s=2f/(1-f)$ fixed at
+$f=N_b/(N_s+N_b)=0.03$:
+\begin{equation}
+ \rho_s=\frac{(1+r^2/a^2)^{-5/2}}{(1+\mu)a^3},\qquad
+ \rho_b=\frac{\mu(1+r^2/(ab)^2)^{-5/2}}{(1+\mu)(ab)^3}.
+\end{equation}
+Canonical initialization reconstructs pressure in the common potential.
+The homology $R\mapsto aR$, $\rho\mapsto\rho/a^3$,
+$P\mapsto P/a^4$, $U\mapsto U/a$ preserves discrete hydrostatic balance.
+The native grid scales with $a$; the observer length unit does not change.
+Neither equal component dispersions nor $E(0)=-1/4$ is imposed after
+fitting different component scales.
+
+At 2000 shells the fresh stock-solver fit gives
+$a=0.7172313$, $b=1.5692616$, and
+$(\rho_{c1},\rho_{c2})=(3.599988,0.600000)$ at $\tau=1$.
+The targets $(3.6,0.6)$ are approximate readings of the solid paper
+curves, uncertain at roughly 5--10\%; the quoted simulation digits do
+not imply precise reference data. Both heating cases use this same fit.
+Only that epoch is fitted; Table~\ref{tab:fit} compares later predictions.
+\begin{table}[ht]
+ \centering
+ \input{../output/heggie_stock_calibrated2000/plots/density_table.tex}
+ \caption{BS+BB central densities. Only the $\tau=1$ row constrains the fit.}
+ \label{tab:fit}
+\end{table}
+
+The baseline BS+BB calculation reaches $\tau=150.040$, with singles'
+peak density $5.499$ at $\tau=10.566$, versus $5.134$ in the earlier
+modified-solver experiment. The large baseline Fig.~4 offset therefore
+persists. Its central BS rate ratio ranges from $1$ to $0.869$.
+The last radius changes by about $7.5\%$; at most $0.073\%$ of the mass
+lies outside code radius 100. These are diagnostics, not proof that
+the boundary is irrelevant. Its total-mass drift is $0.542\%$; the
+stock remapping is not exactly conservative. Mechanical energy is not
+a closed-system conservation residual because heating draws from an
+unresolved binary binding-energy reservoir.
+
+The fitted BS+BB run reaches $\tau=150.216$. Its singles peak is
+$14.774$ at $\tau=10.782$, and its initial plotted energy is $-0.33946$.
+At $\tau=10$, the fitted densities $14.618$ and $15.752$ exceed the
+paper readings by about $35\%$ and $66\%$. The fitted BS-only run
+still has no bounce and reaches the density ceiling at $\tau=12.0356$.
+Thus fitting the left edge does not explain all later differences.
+The fitted BS+BB mass drift is $0.708\%$. Repeating it at 1000 shells,
+with the same parameters and no refit, changes central densities by at
+most $1.53\%$ and $1.31\%$ on 1000 common logarithmic times from
+$\tau=1$ to 150. This check does not establish exact conservation.
+
+\section{The curves in Figs.~1--4}
+\paragraph{Figure 1.}
+Five colours label $f^*=0.001$, $0.002$, $0.005$, $0.01$, $0.02$,
+the effective heating strength
+$f^*=f(1-f)/[\ln\Lambda(1+f)^2]$ in the paper's Eq.~(23).
+The vertical variable is $M_c/M(0)$, with
+$M_c=0.517(4\pi/3)\rho_cr_c^3$ in physical units.
+Weak heating allows continued collapse; sufficiently strong heating
+produces a minimum and approximately steady core mass fraction.
+
+\paragraph{Figure 2.}
+The same colours represent the same five heating strengths. Our solid
+curves are the core radius $r_c$, and dashed curves the half-mass radius
+$r_h$, against $\tau$. We use
+$r_c^2=9\sigma_c^2/(4\pi G\rho_c)$; $r_h$ encloses half the current
+total mass. The paper uses different styles for different $f^*$,
+with each labelled lower $r_c$ curve paired to an upper $r_h$ curve.
+
+\paragraph{Figure 3.}
+No heating is present. The initial density ratio is $0.01$, equal
+Plummer scales give equal dispersions, and $m_b=2m_s$.
+Purple is $\rho_{c2}/\rho_{c1}$; red and blue are the singles' and
+binaries' growth rates
+$\xi_i=t_{rc,i}\,d\ln\rho_{ci}/dt$, with
+$t_{rc,i}=0.34\sigma_{ci}^3/(G^2m_i\rho_{ci}\ln\Lambda)$.
+The horizontal variable is $\Phi_c/\Phi_c(0)$, not time.
+The growing density ratio shows segregation of the heavy component.
+
+\paragraph{Figure 4.}
+Blue is singles' central \emph{mass} density, red binaries'.
+Solid lines include BS+BB heating; dashed lines include BS only.
+The same solid/dashed distinction holds in the gray paper panel.
+A density-ceiling termination must not be described as a reproduced
+bounce. In the separate before/after PDF all coloured curves are
+BS+BB, with dashed meaning original profile and solid meaning fitted
+profile instead; its legend states this different encoding.
+
+\clearpage
+\begin{figure}[p]
+ \centering
+ \includegraphics[width=.73\textwidth]{heggie_fig1_overlay.pdf}\\[-1ex]
+ \includegraphics[width=.73\textwidth]{heggie_fig2_overlay.pdf}
+ \caption{Original-profile Figs.~1--2: gray paper and coloured
+ unchanged-solver histories. The five heating strengths share colours
+ across the two panels. No initial-profile calibration is applied.}
+\end{figure}
+\begin{figure}[p]
+ \centering
+ \includegraphics[width=.73\textwidth]{heggie_fig3_overlay.pdf}\\[-1ex]
+ \includegraphics[width=.73\textwidth]{../output/heggie_stock_calibrated2000/plots/heggie_fig4_overlay.pdf}
+ \caption{Fig.~3 uses the original profile; Fig.~4 uses the freshly
+ calibrated profile with unchanged ThreeFluidSim. Reference aspect ratios
+ and axis limits are preserved. Gray is the paper, colour the simulation.}
+\end{figure}
+\clearpage
+\section{Reconstruction and verification}
+See \texttt{docs/heggie-stock-hydro.md} for build, CLI, data-column and
+stop-condition details. Generate the baseline and fitted suites with
+\texttt{run\_heggie\_hydro\_suite.py} and \texttt{calibrate\_heggie\_hydro.py},
+then run \texttt{plot\_heggie\_hydro.py} and
+\texttt{plot\_heggie\_calibrated.py} with a supplied copy of the paper.
+Compile this source from \texttt{docs/}, directing generated TeX outputs
+to \texttt{../output/}. Generated histories and PDFs are not committed.
+
+Strict O3/native builds omit fast-math. All simulations use one BLAS and
+OpenMP thread. Tests cover initialized hydrostatic balance, unchanged
+native boundaries and actual heating stencil, profile mass fractions,
+observer readback, refusal to overwrite runs, and plotting interpolation
+without extrapolation. The full existing test suite and the Heggie checks
+pass. Mathematica verifies twelve coefficient/source identities and four
+profile/homology identities. No solver implementation is duplicated inside
+the reproduction and no experimental solver flag is required.
+\end{document}

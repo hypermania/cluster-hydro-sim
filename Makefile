@@ -59,12 +59,20 @@ all: $(program_NAME)
 $(program_NAME): $(program_OBJS)
 	$(LINK.cc) $(program_OBJS) -o $(program_NAME) $(LDLIBS)
 
-check: $(check_NAME) check_statler check_examples check_moving
+check: $(check_NAME) check_statler check_examples check_moving output/check_heggie_hydro
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(check_NAME)
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_statler
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_examples
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_moving
+	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./output/check_heggie_hydro
 	python3 -m unittest discover -s test -p 'test_*.py'
+
+output/check_heggie_hydro: test/check_heggie_hydro.o $(solver_check_OBJS)
+	mkdir -p output
+	$(CXX) $(check_CXXFLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+test/check_heggie_hydro.o: test/check_heggie_hydro.cpp $(program_HPP_SRCS)
+	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
 
 check-moving-symbolic: check_moving
 	wolframscript -code 'Get["script/mathematica/moving_three_fluid_compiler.wl"]; If[TrueQ[MovingThreeFluid`allChecksPassed],Exit[0],Exit[1]]'
