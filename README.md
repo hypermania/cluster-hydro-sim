@@ -59,7 +59,8 @@ One evolution step consists of:
 1. A semi-implicit conduction and inter-fluid energy-exchange solve. The
    resulting block-banded system is solved with `LAPACKE_dgbsv`. This solve
    also includes binary-heating source terms.
-2. Optional tidal mass removal.
+2. Optional tidal mass removal (fixed radius or
+   [mass-scaled radius](docs/mass-scaled-tidal-cutoff.md)).
 3. Optional binary formation. Mode 2 transfers density locally from single
    stars to binaries and chooses the updated binary specific energy to
    preserve `Rho_s U_s + Rho_b U_b` pointwise.

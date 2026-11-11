@@ -29,6 +29,13 @@ void ThreeFluidSim::validateEvolution() const {
     for(const auto* x:{&R[f],&Rho[f],&U[f],&P[f],&Menc[f]})
       if(x->size()!=param.N) throw std::invalid_argument("initialize solver after changing N");
   auto positive=[](double x){return std::isfinite(x)&&x>0;};
+  if(param.tidal_cutoff!=TIDAL_CUTOFF_OFF && param.tidal_cutoff!=TIDAL_CUTOFF_ON &&
+     param.tidal_cutoff!=TIDAL_CUTOFF_MASS_SCALED)
+    throw std::invalid_argument("unknown tidal cutoff mode");
+  if(param.tidal_cutoff!=TIDAL_CUTOFF_OFF &&
+     (!positive(param.tidal_radius) || !std::isfinite(param.tidal_cutoff_factor) ||
+      param.tidal_cutoff_factor<0))
+    throw std::invalid_argument("invalid tidal cutoff settings");
   if(param.N<3 || param.maxSteps<0 || !std::isfinite(param.maxTime) || param.maxTime<0 ||
      !std::isfinite(totalTime) || totalTime<0 || !positive(Deltat) ||
      !positive(param.u_change_tolerance) || !positive(param.StopDensity) || !positive(param.max_timestep) ||

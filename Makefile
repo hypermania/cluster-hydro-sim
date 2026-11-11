@@ -59,13 +59,21 @@ all: $(program_NAME)
 $(program_NAME): $(program_OBJS)
 	$(LINK.cc) $(program_OBJS) -o $(program_NAME) $(LDLIBS)
 
-check: $(check_NAME) check_statler check_examples check_moving output/check_heggie_hydro
+check: $(check_NAME) check_statler check_examples check_moving output/check_heggie_hydro output/check_tidal_cutoff
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./$(check_NAME)
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_statler
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_examples
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./check_moving
 	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./output/check_heggie_hydro
+	OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ./output/check_tidal_cutoff
 	python3 -m unittest discover -s test -p 'test_*.py'
+
+output/check_tidal_cutoff: test/check_tidal_cutoff.o $(solver_check_OBJS)
+	mkdir -p output
+	$(CXX) $(check_CXXFLAGS) $(LDFLAGS) $^ -o $@ $(LDLIBS)
+
+test/check_tidal_cutoff.o: test/check_tidal_cutoff.cpp $(program_HPP_SRCS)
+	$(CXX) $(CPPFLAGS) $(check_CXXFLAGS) -c $< -o $@
 
 output/check_heggie_hydro: test/check_heggie_hydro.o $(solver_check_OBJS)
 	mkdir -p output
