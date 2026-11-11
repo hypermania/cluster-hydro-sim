@@ -29,6 +29,7 @@ constexpr long long int BINARY_FORMATION_POWER_LAW = 3;
 
 constexpr long long int TIDAL_CUTOFF_OFF = 0;
 constexpr long long int TIDAL_CUTOFF_ON = 1;
+constexpr long long int TIDAL_CUTOFF_MASS_SCALED = 2;
 
 
 struct ThreeFluidParam {
@@ -44,7 +45,7 @@ struct ThreeFluidParam {
   long long int binary_formation = BINARY_FORMATION_OFF;
   long long int tidal_cutoff = TIDAL_CUTOFF_OFF;
   double tidal_cutoff_factor = 50;
-  double tidal_radius = 10;
+  double tidal_radius = 10; // Fixed radius, or initial r_J for MASS_SCALED.
 
   // Numerical control parameters
   double Deltat = 1e-3; // Initial timestep; adaptive timestep is simulation state.
@@ -70,6 +71,9 @@ public:
   // Adaptive timestep is evolving state, not a second configuration copy.
   double Deltat = 1e-3;
   double cumulative_formed_binaries = 0.0;
+  // Runtime reference mass for MASS_SCALED; zero means not captured yet.
+  // Preserve this with the state when continuing/restarting a tidal run.
+  double tidal_initial_mass = 0.0;
   std::array<Eigen::VectorXd, NF> previousU; // Pre-conduction values for timestep control.
 
   // Internal state

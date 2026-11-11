@@ -27,6 +27,7 @@ ThreeFluidSim::ThreeFluidSim() {}
 
 void ThreeFluidSim::initSolver(const int zones) {
   param.N = zones;
+  tidal_initial_mass = 0.0;
   for(int f = 0; f < NF; ++f){
     previousU[f].resize(param.N);
     R[f].resize(param.N);
@@ -773,8 +774,39 @@ void ThreeFluidSim::applyBinaryFormation() {
 
 
 void ThreeFluidSim::applyTidalCutoff() {
-  //const double tidal_radius = min({R[FS][N-1], R[FB][N-1], R[FD][N-1]});
-  // const double tidal_radius = 1e1;
+  if(param.tidal_cutoff==TIDAL_CUTOFF_OFF) return;
+  if(!std::isfinite(param.tidal_radius) || param.tidal_radius<=0 ||
+     !std::isfinite(param.tidal_cutoff_factor) || param.tidal_cutoff_factor<0 ||
+     !std::isfinite(Deltat) || Deltat<=0 || param.tidal_cutoff_factor*Deltat>=1)
+    throw std::invalid_argument("invalid tidal cutoff radius, rate or timestep");
+
+  double tidal_radius=param.tidal_radius;
+  switch(param.tidal_cutoff) {
+  case TIDAL_CUTOFF_ON:
+    break;
+  case TIDAL_CUTOFF_MASS_SCALED: {
+    // M_tot[N-1] = sum of all components' outermost enclosed masses.
+    // Evaluate once before draining any component, never inside the fluid loop.
+    double mass=0;
+    for(int f=0;f<NF;++f) mass+=Menc[f][param.N-1];
+    if(!std::isfinite(mass) || mass<=0)
+      throw std::runtime_error("invalid cluster mass for tidal cutoff");
+    if(tidal_initial_mass==0) {
+      // The first evolve step is at t=0; preceding conduction leaves mass
+      // unchanged. A resumed state must supply its original reference mass.
+      if(totalTime!=0) throw std::runtime_error("missing initial mass for tidal cutoff");
+      tidal_initial_mass=mass;
+    }
+    if(!std::isfinite(tidal_initial_mass) || tidal_initial_mass<=0)
+      throw std::runtime_error("invalid initial mass for tidal cutoff");
+    tidal_radius*=std::cbrt(mass/tidal_initial_mass);
+    if(!std::isfinite(tidal_radius) || tidal_radius<=0)
+      throw std::runtime_error("invalid mass-scaled tidal radius");
+    break;
+  }
+  default:
+    throw std::invalid_argument("unknown tidal cutoff mode");
+  }
   
   for(int f = 0; f < NF; ++f) {
     // if(tidal_radius < R[f][0]) {
@@ -793,10 +825,10 @@ void ThreeFluidSim::applyTidalCutoff() {
       // This is equivalent to a - const * rho term.
       // d rho / d t = - factor * rho
       const double factor = param.tidal_cutoff_factor;
-      if(param.tidal_radius < R[f][i-1]){
+      if(tidal_radius < R[f][i-1]){
 	Rho[f][i] *= 1.0 - factor * Deltat;
-      } else if(param.tidal_radius < R[f][i]) {
-	const double t = (param.tidal_radius - R[f][i-1]) / (R[f][i] - R[f][i-1]);
+      } else if(tidal_radius < R[f][i]) {
+	const double t = (tidal_radius - R[f][i-1]) / (R[f][i] - R[f][i-1]);
 	Rho[f][i] *= 1.0 - (1.0 - t) * factor * Deltat;
       }
     }
