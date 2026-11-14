@@ -64,6 +64,9 @@ One evolution step consists of:
 3. Optional binary formation. Mode 2 transfers density locally from single
    stars to binaries and chooses the updated binary specific energy to
    preserve `Rho_s U_s + Rho_b U_b` pointwise.
+   Set `sim.param.binary_formation = BINARY_FORMATION_RODRIGUEZ` for the
+   same update with tidal capture disabled (`dn_dt_tc = 0`). The existing
+   three-body rate and all heating coefficients remain unchanged.
 4. Two linearized hydrostatic-relaxation solves per component, using
    `LAPACKE_dgtsv` while preserving shell mass and specific entropy within
    each relaxation solve. The solve includes the finite-mass outer shell and

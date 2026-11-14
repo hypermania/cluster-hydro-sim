@@ -733,7 +733,8 @@ void ThreeFluidSim::applyBinaryFormation() {
     
     // std::cout << "M_FS_ratio, M_FB_ratio, Menc[FS], Menc[FB] = "
     // 	      << M_FS_ratio << "," << M_FB_ratio << "," << Menc[FS][N-1] << "," << Menc[FB][N-1] << std::endl;
-  } else if(param.binary_formation == BINARY_FORMATION_MODE_2) {
+  } else if(param.binary_formation == BINARY_FORMATION_MODE_2 ||
+            param.binary_formation == BINARY_FORMATION_RODRIGUEZ) {
     // Transfer by each Lagrangian zone
     // To preserve energy conservation at each binary formation step, we require
     // \begin{align}
@@ -745,8 +746,8 @@ void ThreeFluidSim::applyBinaryFormation() {
     
     for(int i = 0; i < param.N; ++i){
       // dimensionless formation rate from tidal capture
-      double dn_dt_tc = 3.52e-6 * pow(param.ms * M0 / (pow(r0, 3) * rho0), -2) * pow(Rho[FS][i], 2) / (lnLsd * sqrt(U[FS][i]));
-      // double dn_dt_tc = 0;
+      double dn_dt_tc = param.binary_formation == BINARY_FORMATION_RODRIGUEZ ? 0.0 :
+        3.52e-6 * pow(param.ms * M0 / (pow(r0, 3) * rho0), -2) * pow(Rho[FS][i], 2) / (lnLsd * sqrt(U[FS][i]));
 
       // dimensionless formation rate from 3-body interaction
       double dn_dt_3b = 0.0009373511756007407 * (param.ms * M0 / (pow(r0, 3) * rho0)) * pow(Rho[FS][i], 3) / (lnLsd * pow(U[FS][i], 4.5));

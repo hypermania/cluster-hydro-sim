@@ -26,6 +26,7 @@ constexpr long long int BINARY_FORMATION_OFF = 0;
 constexpr long long int BINARY_FORMATION_MODE_1 = 1;
 constexpr long long int BINARY_FORMATION_MODE_2 = 2;
 constexpr long long int BINARY_FORMATION_POWER_LAW = 3;
+constexpr long long int BINARY_FORMATION_RODRIGUEZ = 4; // MODE_2 without tidal capture.
 
 constexpr long long int TIDAL_CUTOFF_OFF = 0;
 constexpr long long int TIDAL_CUTOFF_ON = 1;
